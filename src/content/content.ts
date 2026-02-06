@@ -148,7 +148,14 @@ document.addEventListener("selectionchange", () => {
   if (!enabled) return;
   if (!overlayRoot || overlayRoot.style.display === "none") return;
 
-  updateOriginal(window.getSelection()?.toString().trim() ?? "");
+  const sel = window.getSelection();
+  const text = sel?.toString().trim() ?? "";
+
+  updateOriginal(text);
+
+  if (text && isChromeTranslated) {
+    updateMatchedTranslation(sel!);
+  }
 });
 
 // --- Chrome translate detection (MVP: state only) ---
@@ -167,16 +174,121 @@ function checkChromeTranslateState() {
 }
 
 function onChromeTranslateStateChange(translated: boolean) {
-  // MVP: just show state in Translation column
   const el = document.querySelector<HTMLDivElement>(
     "#str-col-right .str-col-content"
   );
   if (!el) return;
 
-  el.textContent = translated
-    ? "Chrome translation detected (page translated)."
-    : "Translation will appear here.";
+  if (!translated) {
+    el.textContent = "Translation will appear here.";
+    return;
+  }
+
+  // ⬇️ NEW: collect translated text
+  const translatedText = collectTranslatedParagraphs();
+
+  el.textContent =
+    translatedText.length > 0
+      ? translatedText.join("\n\n")
+      : "(Translated page detected, but no text collected)";
 }
+
+function collectTranslatedParagraphs(): string[] {
+  // MVP target tags (very conservative)
+  const TARGET_TAGS = ["P", "H1", "H2", "H3", "LI"];
+
+  const nodes = Array.from(document.body.querySelectorAll<HTMLElement>(
+    TARGET_TAGS.join(",")
+  ));
+
+  const results: string[] = [];
+
+  for (const el of nodes) {
+    // Skip invisible elements
+    const rect = el.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) continue;
+
+    const text = el.innerText?.trim();
+    if (!text) continue;
+
+    // 너무 짧은 조각 제거 (메뉴, 버튼 등)
+    if (text.length < 30) continue;
+
+    results.push(text);
+
+    // MVP 제한: 너무 많이 쌓이지 않도록
+    if (results.length >= 5) break;
+  }
+
+  return results;
+}
+
+function updateMatchedTranslation(sel: Selection) {
+  const el = document.querySelector<HTMLDivElement>(
+    "#str-col-right .str-col-content"
+  );
+  if (!el) return;
+
+  const range = sel.rangeCount > 0 ? sel.getRangeAt(0) : null;
+  if (!range) return;
+
+  const selRect = range.getBoundingClientRect();
+  if (!selRect) return;
+
+  const candidates = collectTranslatedParagraphElements();
+  if (candidates.length === 0) {
+    el.textContent = "(No translated paragraphs found)";
+    return;
+  }
+
+  let bestEl: HTMLElement | null = null;
+  let bestDist = Infinity;
+
+  for (const p of candidates) {
+    const rect = p.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) continue;
+
+    const dist = distanceBetweenRects(selRect, rect);
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestEl = p;
+    }
+  }
+
+  if (bestEl) {
+    el.textContent = bestEl.innerText.trim();
+  }
+}
+
+function collectTranslatedParagraphElements(): HTMLElement[] {
+  const TAGS = ["P", "H1", "H2", "H3", "LI"];
+
+  const nodes = Array.from(
+    document.body.querySelectorAll<HTMLElement>(TAGS.join(","))
+  );
+
+  return nodes.filter((el) => {
+    const text = el.innerText?.trim();
+    if (!text) return false;
+    if (text.length < 30) return false;
+
+    const rect = el.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return false;
+
+    return true;
+  });
+}
+
+function distanceBetweenRects(a: DOMRect, b: DOMRect): number {
+  const ax = a.left + a.width / 2;
+  const ay = a.top + a.height / 2;
+
+  const bx = b.left + b.width / 2;
+  const by = b.top + b.height / 2;
+
+  return Math.hypot(ax - bx, ay - by);
+}
+
 
 
 chrome.runtime.onMessage.addListener((msg: Msg) => {

@@ -3,6 +3,9 @@
   // src/content/content.ts
   var enabled = false;
   var overlayRoot = null;
+  var originalHtmlMarginRight = null;
+  var originalBodyOverflowX = null;
+  var PANEL_WIDTH = 420;
   var isFlipped = false;
   function ensureOverlay() {
     if (overlayRoot) return overlayRoot;
@@ -10,14 +13,12 @@
     root.id = "str-overlay-root";
     Object.assign(root.style, {
       position: "fixed",
-      top: "12px",
-      right: "12px",
-      width: "520px",
-      maxHeight: "70vh",
+      top: "0",
+      right: "0",
+      width: `${PANEL_WIDTH}px`,
+      height: "100vh",
       background: "#fff",
-      border: "1px solid #e5e5e5",
-      borderRadius: "12px",
-      boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
+      borderLeft: "1px solid #e5e5e5",
       zIndex: "2147483647",
       display: "none",
       overflow: "hidden",
@@ -109,12 +110,24 @@
   }
   function showOverlay() {
     const root = ensureOverlay();
+    if (originalHtmlMarginRight === null) {
+      originalHtmlMarginRight = document.documentElement.style.marginRight;
+      originalBodyOverflowX = document.body.style.overflowX;
+      document.documentElement.style.marginRight = `${PANEL_WIDTH}px`;
+      document.body.style.overflowX = "hidden";
+    }
     root.style.display = "block";
     updateOriginal(window.getSelection()?.toString().trim() ?? "");
   }
   function hideOverlay() {
     if (!overlayRoot) return;
     overlayRoot.style.display = "none";
+    if (originalHtmlMarginRight !== null) {
+      document.documentElement.style.marginRight = originalHtmlMarginRight ?? "";
+      document.body.style.overflowX = originalBodyOverflowX ?? "";
+      originalHtmlMarginRight = null;
+      originalBodyOverflowX = null;
+    }
   }
   document.addEventListener("selectionchange", () => {
     if (!enabled) return;

@@ -2,416 +2,250 @@ type Msg =
   | { type: "START" }
   | { type: "STOP" };
 
-/* =========================
- * DEBUG LOGGER
- * ========================= */
-const LOG = (...args: any[]) => {
-  console.log("[STR-DBG]", ...args);
-};
-
-LOG("content.ts loaded", location.href);
-
 let enabled = false;
-let overlayRoot: HTMLDivElement | null = null;
-let originalHtmlMarginRight: string | null = null;
-let originalBodyOverflowX: string | null = null;
-const PANEL_WIDTH = 420;
 
-let isFlipped = false;
+let splitRoot: HTMLDivElement | null = null;
+let leftPane: HTMLDivElement | null = null;
+let rightPane: HTMLDivElement | null = null;
 
-/**
- * 우측 오버레이 생성 (재사용)
- */
-function ensureOverlay() {
-  LOG("ensureOverlay()", { exists: !!overlayRoot });
+let leftIframe: HTMLIFrameElement | null = null;
 
-  if (overlayRoot) return overlayRoot;
+let originalSnapshotBodyHTML: string | null = null;
+let originalSnapshotHeadHTML: string | null = null;
 
-  LOG("creating overlay DOM");
+const SPLIT_LEFT_RATIO = 0.5; // 좌/우 50:50
 
-  const root = document.createElement("div");
-  root.id = "str-overlay-root";
-  Object.assign(root.style, {
+// =====================
+// LOG (삭제 금지)
+// =====================
+function log(...args: any[]) {
+  console.log("[STR-DBG]", ...args);
+}
+
+// =====================
+// Snapshot (전략2 핵심)
+// =====================
+function captureSnapshotOnce() {
+  if (originalSnapshotBodyHTML !== null) return;
+
+  log("captureSnapshotOnce() start");
+
+  // body는 통째로 복사 (script 포함 시 번잡해질 수 있으니 제거)
+  const bodyClone = document.body.cloneNode(true) as HTMLBodyElement;
+  bodyClone.querySelectorAll("script, noscript").forEach((n) => n.remove());
+
+  originalSnapshotBodyHTML = bodyClone.innerHTML;
+
+  // head에서는 스타일만 가져오는 게 목적 (CSS/link/style)
+  const head = document.head;
+  const cssNodes = Array.from(
+    head.querySelectorAll('link[rel="stylesheet"], style')
+  );
+
+  // 그대로 outerHTML로 넣는다 (상대경로 깨짐 방지 위해 base도 추가)
+  const baseHref = location.href;
+  const headParts: string[] = [];
+  headParts.push(`<base href="${escapeHtml(baseHref)}">`);
+  headParts.push(`<meta charset="utf-8">`);
+
+  // 번역 방지 힌트 (Chrome/Google Translate)
+  headParts.push(`<meta name="google" content="notranslate">`);
+
+  for (const n of cssNodes) {
+    headParts.push(n.outerHTML);
+  }
+
+  originalSnapshotHeadHTML = headParts.join("\n");
+
+  log("captureSnapshotOnce() done", {
+    bodyLen: originalSnapshotBodyHTML.length,
+    headLen: originalSnapshotHeadHTML.length,
+  });
+}
+
+function escapeHtml(s: string) {
+  return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+}
+
+// =====================
+// Split UI
+// =====================
+function ensureSplitUI() {
+  if (splitRoot) return;
+
+  log("ensureSplitUI() create");
+
+  splitRoot = document.createElement("div");
+  splitRoot.id = "str-split-root";
+  Object.assign(splitRoot.style, {
     position: "fixed",
-    top: "0",
-    right: "0",
-    width: `${PANEL_WIDTH}px`,
-    height: "100vh",
-    background: "#fff",
-    borderLeft: "1px solid #e5e5e5",
+    inset: "0",
     zIndex: "2147483647",
-    display: "none",
-    overflow: "hidden",
-    fontFamily: "system-ui, sans-serif"
-  });
-
-  /* Header */
-  const header = document.createElement("div");
-  Object.assign(header.style, {
     display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: "8px 10px",
-    borderBottom: "1px solid #eee"
+    background: "#fff",
   });
 
-  const title = document.createElement("div");
-  title.textContent = "Split Translate Reader";
-  title.style.fontWeight = "700";
-
-  const flipBtn = document.createElement("button");
-  flipBtn.textContent = "↔ Flip";
-  Object.assign(flipBtn.style, {
-    padding: "6px 10px",
-    borderRadius: "8px",
-    border: "1px solid #ccc",
-    background: "#f7f7f7",
-    cursor: "pointer"
+  // Left pane (원문 스냅샷 iframe)
+  leftPane = document.createElement("div");
+  leftPane.id = "str-left-pane";
+  Object.assign(leftPane.style, {
+    width: `${Math.round(SPLIT_LEFT_RATIO * 100)}%`,
+    height: "100%",
+    borderRight: "1px solid #ddd",
+    background: "#fff",
   });
 
-  flipBtn.onclick = () => {
-    isFlipped = !isFlipped;
-    LOG("flip clicked", { isFlipped });
-    applyFlip();
-  };
+  // 번역 제외 힌트 (Chrome 번역이 100% 보장하진 않지만 도움 됨)
+  leftPane.classList.add("notranslate");
+  leftPane.setAttribute("translate", "no");
 
-  header.appendChild(title);
-  header.appendChild(flipBtn);
-
-  /* Body */
-  const body = document.createElement("div");
-  body.id = "str-body";
-  Object.assign(body.style, {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    height: "100%"
+  leftIframe = document.createElement("iframe");
+  leftIframe.id = "str-left-iframe";
+  Object.assign(leftIframe.style, {
+    width: "100%",
+    height: "100%",
+    border: "0",
+    display: "block",
+    background: "#fff",
   });
 
-  const colLeft = createColumn("str-col-left", "Original");
-  const colRight = createColumn("str-col-right", "Translation");
+  // srcdoc 구성: head+body
+  const headHTML = originalSnapshotHeadHTML ?? `<meta charset="utf-8"><meta name="google" content="notranslate">`;
+  const bodyHTML = originalSnapshotBodyHTML ?? "";
 
-  body.appendChild(colLeft);
-  body.appendChild(colRight);
+  // body 쪽에도 translate 방지 힌트
+  const srcdoc = `<!doctype html>
+<html translate="no" class="notranslate">
+<head>
+${headHTML}
+</head>
+<body translate="no" class="notranslate">
+${bodyHTML}
+</body>
+</html>`;
 
-  root.appendChild(header);
-  root.appendChild(body);
-  document.documentElement.appendChild(root);
+  leftIframe.srcdoc = srcdoc;
 
-  overlayRoot = root;
+  leftPane.appendChild(leftIframe);
 
-  LOG("overlay created & appended", {
-    display: overlayRoot.style.display
-  });
-
-  return overlayRoot;
-}
-
-/**
- * 좌/우 컬럼 생성
- */
-function createColumn(id: string, label: string) {
-  LOG("createColumn()", { id, label });
-
-  const col = document.createElement("div");
-  col.id = id;
-  Object.assign(col.style, {
-    padding: "10px",
+  // Right pane (라이브 페이지, Chrome 번역 대상)
+  rightPane = document.createElement("div");
+  rightPane.id = "str-right-pane";
+  Object.assign(rightPane.style, {
+    width: `${100 - Math.round(SPLIT_LEFT_RATIO * 100)}%`,
+    height: "100%",
     overflow: "auto",
-    borderRight: label === "Original" ? "1px solid #eee" : "none"
+    background: "#fff",
   });
 
-  const tag = document.createElement("div");
-  tag.textContent = label;
-  Object.assign(tag.style, {
-    fontSize: "11px",
-    color: "#666",
-    marginBottom: "6px"
+  // 기존 body 자식들을 rightPane로 이동
+  const wrapper = document.createElement("div");
+  wrapper.id = "str-right-wrapper";
+  while (document.body.firstChild) {
+    wrapper.appendChild(document.body.firstChild);
+  }
+  rightPane.appendChild(wrapper);
+
+  splitRoot.appendChild(leftPane);
+  splitRoot.appendChild(rightPane);
+
+  document.body.appendChild(splitRoot);
+
+  log("ensureSplitUI() done", {
+    leftPane: !!leftPane,
+    rightPane: !!rightPane,
+    leftIframe: !!leftIframe,
   });
 
-  const content = document.createElement("div");
-  content.className = "str-col-content";
-  Object.assign(content.style, {
-    fontSize: "13px",
-    color: "#111",
-    whiteSpace: "pre-wrap"
-  });
-
-  content.textContent =
-    label === "Original"
-      ? "Select text on the page."
-      : "Translation will appear here.";
-
-  col.appendChild(tag);
-  col.appendChild(content);
-  return col;
+  setupScrollSync();
 }
 
-/**
- * 좌우 컬럼 뒤집기
- */
-function applyFlip() {
-  LOG("applyFlip()", { isFlipped });
+function teardownSplitUI() {
+  log("teardownSplitUI() start");
 
-  const body = document.getElementById("str-body");
-  if (!body) return;
+  if (!splitRoot) return;
 
-  body.style.direction = isFlipped ? "rtl" : "ltr";
-  body.querySelectorAll<HTMLElement>(".str-col-content").forEach((el) => {
-    el.style.direction = "ltr";
-  });
-}
-
-/**
- * 원문 업데이트
- */
-function updateOriginal(text: string) {
-  LOG("updateOriginal()", { text });
-
-  const el = document.querySelector<HTMLDivElement>(
-    "#str-col-left .str-col-content"
-  );
-  if (el) el.textContent = text || "Select text on the page.";
-}
-
-/**
- * 오버레이 표시
- */
-function showOverlay() {
-  LOG("showOverlay()", {
-    enabled,
-    selection: window.getSelection()?.toString()
-  });
-
-  const root = ensureOverlay();
-
-  if (originalHtmlMarginRight === null) {
-    originalHtmlMarginRight = document.documentElement.style.marginRight;
-    originalBodyOverflowX = document.body.style.overflowX;
-
-    document.documentElement.style.marginRight = `${PANEL_WIDTH}px`;
-    document.body.style.overflowX = "hidden";
-
-    LOG("page layout adjusted");
-  }
-
-  root.style.display = "block";
-  LOG("overlay display = block");
-
-  updateOriginal(window.getSelection()?.toString().trim() ?? "");
-}
-
-/**
- * 오버레이 숨김
- */
-function hideOverlay() {
-  LOG("hideOverlay()");
-
-  if (!overlayRoot) return;
-  overlayRoot.style.display = "none";
-
-  if (originalHtmlMarginRight !== null) {
-    document.documentElement.style.marginRight =
-      originalHtmlMarginRight ?? "";
-    document.body.style.overflowX =
-      originalBodyOverflowX ?? "";
-
-    originalHtmlMarginRight = null;
-    originalBodyOverflowX = null;
-
-    LOG("page layout restored");
-  }
-}
-
-/**
- * 텍스트 선택 변경 감지
- */
-document.addEventListener("selectionchange", () => {
-  LOG("selectionchange event", { enabled });
-
-  if (!enabled) return;
-  if (!overlayRoot || overlayRoot.style.display === "none") return;
-
-  const sel = window.getSelection();
-  const text = sel?.toString().trim() ?? "";
-
-  LOG("selection text", text);
-
-  updateOriginal(text);
-
-  if (text && isChromeTranslated) {
-    LOG("calling updateMatchedTranslation()");
-    updateMatchedTranslation(sel!);
-  }
-});
-
-/* =========================
- * Chrome 번역 감지
- * ========================= */
-let isChromeTranslated = false;
-
-function checkChromeTranslateState() {
-  const html = document.documentElement;
-  const translated =
-    html.classList.contains("translated-ltr") ||
-    html.classList.contains("translated-rtl");
-
-  LOG("checkChromeTranslateState()", {
-    className: html.className,
-    translated,
-    prev: isChromeTranslated
-  });
-
-  if (translated !== isChromeTranslated) {
-    isChromeTranslated = translated;
-    onChromeTranslateStateChange(translated);
-  }
-}
-
-function onChromeTranslateStateChange(translated: boolean) {
-  LOG("onChromeTranslateStateChange()", translated);
-
-  const el = document.querySelector<HTMLDivElement>(
-    "#str-col-right .str-col-content"
-  );
-  LOG("translation column exists?", !!el);
-
-  if (!el) return;
-
-  if (!translated) {
-    el.textContent = "Translation will appear here.";
-    return;
-  }
-
-  const translatedText = collectTranslatedParagraphs();
-  LOG("translated paragraphs collected", translatedText.length);
-
-  el.textContent =
-    translatedText.length > 0
-      ? translatedText.join("\n\n")
-      : "(Translated page detected, but no text collected)";
-}
-
-/**
- * 번역 문단 수집
- */
-function collectTranslatedParagraphs(): string[] {
-  const TAGS = ["P", "H1", "H2", "H3", "LI"];
-  const nodes = Array.from(
-    document.body.querySelectorAll<HTMLElement>(TAGS.join(","))
-  );
-
-  LOG("collectTranslatedParagraphs()", { nodeCount: nodes.length });
-
-  const results: string[] = [];
-
-  for (const el of nodes) {
-    const rect = el.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) continue;
-
-    const text = el.innerText?.trim();
-    if (!text || text.length < 30) continue;
-
-    results.push(text);
-    if (results.length >= 5) break;
-  }
-
-  return results;
-}
-
-/**
- * 선택 위치 기반 번역 매칭
- */
-function updateMatchedTranslation(sel: Selection) {
-  LOG("updateMatchedTranslation()", sel.toString());
-
-  const el = document.querySelector<HTMLDivElement>(
-    "#str-col-right .str-col-content"
-  );
-  if (!el) return;
-
-  const range = sel.rangeCount > 0 ? sel.getRangeAt(0) : null;
-  if (!range) return;
-
-  const selRect = range.getBoundingClientRect();
-  if (!selRect) return;
-
-  const candidates = collectTranslatedParagraphElements();
-  LOG("candidate paragraphs", candidates.length);
-
-  let bestEl: HTMLElement | null = null;
-  let bestDist = Infinity;
-
-  for (const p of candidates) {
-    const rect = p.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) continue;
-
-    const dist = distanceBetweenRects(selRect, rect);
-    if (dist < bestDist) {
-      bestDist = dist;
-      bestEl = p;
+  // rightPane 안의 wrapper를 다시 body로 복원
+  const wrapper = rightPane?.querySelector("#str-right-wrapper");
+  if (wrapper) {
+    while (wrapper.firstChild) {
+      document.body.appendChild(wrapper.firstChild);
     }
   }
 
-  if (bestEl) {
-    const sentences = splitIntoSentences(bestEl.innerText.trim());
-    el.textContent = sentences.slice(0, 2).join(" ");
-  }
+  splitRoot.remove();
+
+  splitRoot = null;
+  leftPane = null;
+  rightPane = null;
+  leftIframe = null;
+
+  originalSnapshotBodyHTML = null;
+  originalSnapshotHeadHTML = null;
+
+  log("teardownSplitUI() done");
 }
 
-function collectTranslatedParagraphElements(): HTMLElement[] {
-  const TAGS = ["P", "H1", "H2", "H3", "LI"];
-  return Array.from(
-    document.body.querySelectorAll<HTMLElement>(TAGS.join(","))
-  ).filter((el) => {
-    const text = el.innerText?.trim();
-    if (!text || text.length < 30) return false;
-    const rect = el.getBoundingClientRect();
-    return rect.width > 0 && rect.height > 0;
+// =====================
+// Scroll Sync (우->좌) 비율 기반
+// =====================
+function setupScrollSync() {
+  if (!rightPane || !leftIframe) {
+    log("setupScrollSync() missing refs", { rightPane: !!rightPane, leftIframe: !!leftIframe });
+    return;
+  }
+
+  log("setupScrollSync() attach");
+
+  // iframe 로딩 이후 scrollHeight 계산 가능
+  leftIframe.addEventListener("load", () => {
+    log("leftIframe load");
+  });
+
+  rightPane.addEventListener("scroll", () => {
+    try {
+      const iframeDoc = leftIframe?.contentDocument;
+      const iframeWin = leftIframe?.contentWindow;
+      if (!iframeDoc || !iframeWin || !rightPane) return;
+
+      const rightMax = rightPane.scrollHeight - rightPane.clientHeight;
+      const leftMax =
+        iframeDoc.documentElement.scrollHeight - iframeWin.innerHeight;
+
+      if (rightMax <= 0 || leftMax <= 0) return;
+
+      const ratio = rightPane.scrollTop / rightMax;
+      const target = ratio * leftMax;
+
+      iframeWin.scrollTo(0, target);
+
+      log("scrollSync", { ratio, rightTop: rightPane.scrollTop, leftTarget: target });
+    } catch (e) {
+      log("scrollSync error", e);
+    }
   });
 }
 
-function distanceBetweenRects(a: DOMRect, b: DOMRect): number {
-  const ax = a.left + a.width / 2;
-  const ay = a.top + a.height / 2;
-  const bx = b.left + b.width / 2;
-  const by = b.top + b.height / 2;
-  return Math.hypot(ax - bx, ay - by);
-}
-
-function splitIntoSentences(text: string): string[] {
-  return text
-    .replace(/\n+/g, " ")
-    .split(/(?<=[.!?。！？])\s+/)
-    .map(s => s.trim())
-    .filter(s => s.length > 10);
-}
-
-/**
- * START / STOP 메시지
- */
+// =====================
+// Chrome 메시지
+// =====================
 chrome.runtime.onMessage.addListener((msg: Msg) => {
-  LOG("onMessage()", msg);
+  log("onMessage", msg);
 
   if (msg.type === "START") {
+    if (enabled) return;
+
     enabled = true;
-    showOverlay();
-    checkChromeTranslateState();
+
+    captureSnapshotOnce();
+    ensureSplitUI();
+
+    log("START done");
   }
 
   if (msg.type === "STOP") {
     enabled = false;
-    hideOverlay();
+    teardownSplitUI();
+    log("STOP done");
   }
-});
-
-/**
- * Chrome 번역 상태 observer
- */
-new MutationObserver(() => {
-  if (!enabled) return;
-  LOG("MutationObserver triggered");
-  checkChromeTranslateState();
-}).observe(document.documentElement, {
-  attributes: true,
-  attributeFilter: ["class"]
 });

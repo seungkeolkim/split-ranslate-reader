@@ -1,32 +1,160 @@
 "use strict";
 (() => {
   // src/content/content.ts
-  var overlay = null;
-  function toggleOverlay() {
-    if (!overlay) {
-      overlay = document.createElement("div");
-      overlay.style.position = "fixed";
-      overlay.style.top = "12px";
-      overlay.style.right = "12px";
-      overlay.style.width = "400px";
-      overlay.style.maxHeight = "70vh";
-      overlay.style.background = "#fff";
-      overlay.style.border = "1px solid #ccc";
-      overlay.style.padding = "10px";
-      overlay.style.zIndex = "2147483647";
-      overlay.textContent = "Selected text will appear here.";
-      document.body.appendChild(overlay);
-    }
-    overlay.style.display = overlay.style.display === "none" ? "block" : "none";
+  var enabled = false;
+  var overlayRoot = null;
+  var isFlipped = false;
+  function ensureOverlay() {
+    if (overlayRoot) return overlayRoot;
+    const root = document.createElement("div");
+    root.id = "str-overlay-root";
+    Object.assign(root.style, {
+      position: "fixed",
+      top: "12px",
+      right: "12px",
+      width: "520px",
+      maxHeight: "70vh",
+      background: "#fff",
+      border: "1px solid #e5e5e5",
+      borderRadius: "12px",
+      boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
+      zIndex: "2147483647",
+      display: "none",
+      overflow: "hidden",
+      fontFamily: "system-ui, sans-serif"
+    });
+    const header = document.createElement("div");
+    Object.assign(header.style, {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      padding: "8px 10px",
+      borderBottom: "1px solid #eee"
+    });
+    const title = document.createElement("div");
+    title.textContent = "Split Translate Reader";
+    title.style.fontWeight = "700";
+    const flipBtn = document.createElement("button");
+    flipBtn.textContent = "\u2194 Flip";
+    Object.assign(flipBtn.style, {
+      padding: "6px 10px",
+      borderRadius: "8px",
+      border: "1px solid #ccc",
+      background: "#f7f7f7",
+      cursor: "pointer"
+    });
+    flipBtn.onclick = () => {
+      isFlipped = !isFlipped;
+      applyFlip();
+    };
+    header.appendChild(title);
+    header.appendChild(flipBtn);
+    const body = document.createElement("div");
+    body.id = "str-body";
+    Object.assign(body.style, {
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr",
+      height: "100%"
+    });
+    const colLeft = createColumn("str-col-left", "Original");
+    const colRight = createColumn("str-col-right", "Translation");
+    body.appendChild(colLeft);
+    body.appendChild(colRight);
+    root.appendChild(header);
+    root.appendChild(body);
+    document.documentElement.appendChild(root);
+    overlayRoot = root;
+    return overlayRoot;
+  }
+  function createColumn(id, label) {
+    const col = document.createElement("div");
+    col.id = id;
+    Object.assign(col.style, {
+      padding: "10px",
+      overflow: "auto",
+      borderRight: label === "Original" ? "1px solid #eee" : "none"
+    });
+    const tag = document.createElement("div");
+    tag.textContent = label;
+    Object.assign(tag.style, {
+      fontSize: "11px",
+      color: "#666",
+      marginBottom: "6px"
+    });
+    const content = document.createElement("div");
+    content.className = "str-col-content";
+    Object.assign(content.style, {
+      fontSize: "13px",
+      color: "#111",
+      whiteSpace: "pre-wrap"
+    });
+    content.textContent = label === "Original" ? "Select text on the page." : "Translation will appear here.";
+    col.appendChild(tag);
+    col.appendChild(content);
+    return col;
+  }
+  function applyFlip() {
+    const body = document.getElementById("str-body");
+    if (!body) return;
+    body.style.direction = isFlipped ? "rtl" : "ltr";
+    body.querySelectorAll(".str-col-content").forEach((el) => {
+      el.style.direction = "ltr";
+    });
+  }
+  function updateOriginal(text) {
+    const el = document.querySelector(
+      "#str-col-left .str-col-content"
+    );
+    if (el) el.textContent = text || "Select text on the page.";
+  }
+  function showOverlay() {
+    const root = ensureOverlay();
+    root.style.display = "block";
+    updateOriginal(window.getSelection()?.toString().trim() ?? "");
+  }
+  function hideOverlay() {
+    if (!overlayRoot) return;
+    overlayRoot.style.display = "none";
   }
   document.addEventListener("selectionchange", () => {
-    if (!overlay || overlay.style.display === "none") return;
-    overlay.textContent = window.getSelection()?.toString() || "";
+    if (!enabled) return;
+    if (!overlayRoot || overlayRoot.style.display === "none") return;
+    updateOriginal(window.getSelection()?.toString().trim() ?? "");
   });
-  chrome.runtime.onMessage.addListener((msg) => {
-    if (msg?.type === "TOGGLE_OVERLAY") {
-      toggleOverlay();
+  var isChromeTranslated = false;
+  function checkChromeTranslateState() {
+    const html = document.documentElement;
+    const translated = html.classList.contains("translated-ltr") || html.classList.contains("translated-rtl");
+    if (translated !== isChromeTranslated) {
+      isChromeTranslated = translated;
+      onChromeTranslateStateChange(translated);
     }
+  }
+  function onChromeTranslateStateChange(translated) {
+    const el = document.querySelector(
+      "#str-col-right .str-col-content"
+    );
+    if (!el) return;
+    el.textContent = translated ? "Chrome translation detected (page translated)." : "Translation will appear here.";
+  }
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg.type === "START") {
+      enabled = true;
+      showOverlay();
+      checkChromeTranslateState();
+    }
+    if (msg.type === "STOP") {
+      enabled = false;
+      hideOverlay();
+    }
+  });
+  var htmlObserver = new MutationObserver(() => {
+    if (!enabled) return;
+    checkChromeTranslateState();
+  });
+  htmlObserver.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["class"]
   });
 })();
 //# sourceMappingURL=content.js.map

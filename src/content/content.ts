@@ -2,16 +2,32 @@ type Msg =
   | { type: "START" }
   | { type: "STOP" };
 
+/* =========================
+ * DEBUG LOGGER
+ * ========================= */
+const LOG = (...args: any[]) => {
+  console.log("[STR-DBG]", ...args);
+};
+
+LOG("content.ts loaded", location.href);
+
 let enabled = false;
-let overlayRoot: HTMLDivElement | null = null; // right panel root
+let overlayRoot: HTMLDivElement | null = null;
 let originalHtmlMarginRight: string | null = null;
 let originalBodyOverflowX: string | null = null;
 const PANEL_WIDTH = 420;
 
 let isFlipped = false;
 
+/**
+ * 우측 오버레이 생성 (재사용)
+ */
 function ensureOverlay() {
+  LOG("ensureOverlay()", { exists: !!overlayRoot });
+
   if (overlayRoot) return overlayRoot;
+
+  LOG("creating overlay DOM");
 
   const root = document.createElement("div");
   root.id = "str-overlay-root";
@@ -29,23 +45,7 @@ function ensureOverlay() {
     fontFamily: "system-ui, sans-serif"
   });
 
-  // Object.assign(root.style, {
-  //   position: "fixed",
-  //   top: "12px",
-  //   right: "12px",
-  //   width: "520px",
-  //   maxHeight: "70vh",
-  //   background: "#fff",
-  //   border: "1px solid #e5e5e5",
-  //   borderRadius: "12px",
-  //   boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
-  //   zIndex: "2147483647",
-  //   display: "none",
-  //   overflow: "hidden",
-  //   fontFamily: "system-ui, sans-serif"
-  // });
-
-  // Header
+  /* Header */
   const header = document.createElement("div");
   Object.assign(header.style, {
     display: "flex",
@@ -71,13 +71,14 @@ function ensureOverlay() {
 
   flipBtn.onclick = () => {
     isFlipped = !isFlipped;
+    LOG("flip clicked", { isFlipped });
     applyFlip();
   };
 
   header.appendChild(title);
   header.appendChild(flipBtn);
 
-  // Body
+  /* Body */
   const body = document.createElement("div");
   body.id = "str-body";
   Object.assign(body.style, {
@@ -97,10 +98,20 @@ function ensureOverlay() {
   document.documentElement.appendChild(root);
 
   overlayRoot = root;
+
+  LOG("overlay created & appended", {
+    display: overlayRoot.style.display
+  });
+
   return overlayRoot;
 }
 
+/**
+ * 좌/우 컬럼 생성
+ */
 function createColumn(id: string, label: string) {
+  LOG("createColumn()", { id, label });
+
   const col = document.createElement("div");
   col.id = id;
   Object.assign(col.style, {
@@ -124,6 +135,7 @@ function createColumn(id: string, label: string) {
     color: "#111",
     whiteSpace: "pre-wrap"
   });
+
   content.textContent =
     label === "Original"
       ? "Select text on the page."
@@ -134,7 +146,12 @@ function createColumn(id: string, label: string) {
   return col;
 }
 
+/**
+ * 좌우 컬럼 뒤집기
+ */
 function applyFlip() {
+  LOG("applyFlip()", { isFlipped });
+
   const body = document.getElementById("str-body");
   if (!body) return;
 
@@ -144,14 +161,27 @@ function applyFlip() {
   });
 }
 
+/**
+ * 원문 업데이트
+ */
 function updateOriginal(text: string) {
+  LOG("updateOriginal()", { text });
+
   const el = document.querySelector<HTMLDivElement>(
     "#str-col-left .str-col-content"
   );
   if (el) el.textContent = text || "Select text on the page.";
 }
 
+/**
+ * 오버레이 표시
+ */
 function showOverlay() {
+  LOG("showOverlay()", {
+    enabled,
+    selection: window.getSelection()?.toString()
+  });
+
   const root = ensureOverlay();
 
   if (originalHtmlMarginRight === null) {
@@ -160,16 +190,23 @@ function showOverlay() {
 
     document.documentElement.style.marginRight = `${PANEL_WIDTH}px`;
     document.body.style.overflowX = "hidden";
+
+    LOG("page layout adjusted");
   }
 
   root.style.display = "block";
+  LOG("overlay display = block");
+
   updateOriginal(window.getSelection()?.toString().trim() ?? "");
 }
 
-
+/**
+ * 오버레이 숨김
+ */
 function hideOverlay() {
-  if (!overlayRoot) return;
+  LOG("hideOverlay()");
 
+  if (!overlayRoot) return;
   overlayRoot.style.display = "none";
 
   if (originalHtmlMarginRight !== null) {
@@ -180,25 +217,36 @@ function hideOverlay() {
 
     originalHtmlMarginRight = null;
     originalBodyOverflowX = null;
+
+    LOG("page layout restored");
   }
 }
 
-
+/**
+ * 텍스트 선택 변경 감지
+ */
 document.addEventListener("selectionchange", () => {
+  LOG("selectionchange event", { enabled });
+
   if (!enabled) return;
   if (!overlayRoot || overlayRoot.style.display === "none") return;
 
   const sel = window.getSelection();
   const text = sel?.toString().trim() ?? "";
 
+  LOG("selection text", text);
+
   updateOriginal(text);
 
   if (text && isChromeTranslated) {
+    LOG("calling updateMatchedTranslation()");
     updateMatchedTranslation(sel!);
   }
 });
 
-// --- Chrome translate detection (MVP: state only) ---
+/* =========================
+ * Chrome 번역 감지
+ * ========================= */
 let isChromeTranslated = false;
 
 function checkChromeTranslateState() {
@@ -207,6 +255,12 @@ function checkChromeTranslateState() {
     html.classList.contains("translated-ltr") ||
     html.classList.contains("translated-rtl");
 
+  LOG("checkChromeTranslateState()", {
+    className: html.className,
+    translated,
+    prev: isChromeTranslated
+  });
+
   if (translated !== isChromeTranslated) {
     isChromeTranslated = translated;
     onChromeTranslateStateChange(translated);
@@ -214,9 +268,13 @@ function checkChromeTranslateState() {
 }
 
 function onChromeTranslateStateChange(translated: boolean) {
+  LOG("onChromeTranslateStateChange()", translated);
+
   const el = document.querySelector<HTMLDivElement>(
     "#str-col-right .str-col-content"
   );
+  LOG("translation column exists?", !!el);
+
   if (!el) return;
 
   if (!translated) {
@@ -224,8 +282,8 @@ function onChromeTranslateStateChange(translated: boolean) {
     return;
   }
 
-  // ⬇️ NEW: collect translated text
   const translatedText = collectTranslatedParagraphs();
+  LOG("translated paragraphs collected", translatedText.length);
 
   el.textContent =
     translatedText.length > 0
@@ -233,37 +291,39 @@ function onChromeTranslateStateChange(translated: boolean) {
       : "(Translated page detected, but no text collected)";
 }
 
+/**
+ * 번역 문단 수집
+ */
 function collectTranslatedParagraphs(): string[] {
-  // MVP target tags (very conservative)
-  const TARGET_TAGS = ["P", "H1", "H2", "H3", "LI"];
+  const TAGS = ["P", "H1", "H2", "H3", "LI"];
+  const nodes = Array.from(
+    document.body.querySelectorAll<HTMLElement>(TAGS.join(","))
+  );
 
-  const nodes = Array.from(document.body.querySelectorAll<HTMLElement>(
-    TARGET_TAGS.join(",")
-  ));
+  LOG("collectTranslatedParagraphs()", { nodeCount: nodes.length });
 
   const results: string[] = [];
 
   for (const el of nodes) {
-    // Skip invisible elements
     const rect = el.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) continue;
 
     const text = el.innerText?.trim();
-    if (!text) continue;
-
-    // 너무 짧은 조각 제거 (메뉴, 버튼 등)
-    if (text.length < 30) continue;
+    if (!text || text.length < 30) continue;
 
     results.push(text);
-
-    // MVP 제한: 너무 많이 쌓이지 않도록
     if (results.length >= 5) break;
   }
 
   return results;
 }
 
+/**
+ * 선택 위치 기반 번역 매칭
+ */
 function updateMatchedTranslation(sel: Selection) {
+  LOG("updateMatchedTranslation()", sel.toString());
+
   const el = document.querySelector<HTMLDivElement>(
     "#str-col-right .str-col-content"
   );
@@ -276,10 +336,7 @@ function updateMatchedTranslation(sel: Selection) {
   if (!selRect) return;
 
   const candidates = collectTranslatedParagraphElements();
-  if (candidates.length === 0) {
-    el.textContent = "(No translated paragraphs found)";
-    return;
-  }
+  LOG("candidate paragraphs", candidates.length);
 
   let bestEl: HTMLElement | null = null;
   let bestDist = Infinity;
@@ -297,63 +354,48 @@ function updateMatchedTranslation(sel: Selection) {
 
   if (bestEl) {
     const sentences = splitIntoSentences(bestEl.innerText.trim());
-
-    // 선택 길이에 따라 표시할 문장 수 결정 (MVP heuristic)
-    const selText = sel.toString().trim();
-    const sentenceCount = selText.length < 80 ? 1 : 2;
-
-    el.textContent = sentences.slice(0, sentenceCount).join(" ");
+    el.textContent = sentences.slice(0, 2).join(" ");
   }
 }
 
 function collectTranslatedParagraphElements(): HTMLElement[] {
   const TAGS = ["P", "H1", "H2", "H3", "LI"];
-
-  const nodes = Array.from(
+  return Array.from(
     document.body.querySelectorAll<HTMLElement>(TAGS.join(","))
-  );
-
-  return nodes.filter((el) => {
+  ).filter((el) => {
     const text = el.innerText?.trim();
-    if (!text) return false;
-    if (text.length < 30) return false;
-
+    if (!text || text.length < 30) return false;
     const rect = el.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) return false;
-
-    return true;
+    return rect.width > 0 && rect.height > 0;
   });
 }
 
 function distanceBetweenRects(a: DOMRect, b: DOMRect): number {
   const ax = a.left + a.width / 2;
   const ay = a.top + a.height / 2;
-
   const bx = b.left + b.width / 2;
   const by = b.top + b.height / 2;
-
   return Math.hypot(ax - bx, ay - by);
 }
 
 function splitIntoSentences(text: string): string[] {
-  // 매우 보수적인 문장 분리 (MVP)
-  const raw = text
+  return text
     .replace(/\n+/g, " ")
-    .split(/(?<=[.!?。！？])\s+/);
-
-  return raw
+    .split(/(?<=[.!?。！？])\s+/)
     .map(s => s.trim())
     .filter(s => s.length > 10);
 }
 
-
-
-
+/**
+ * START / STOP 메시지
+ */
 chrome.runtime.onMessage.addListener((msg: Msg) => {
+  LOG("onMessage()", msg);
+
   if (msg.type === "START") {
     enabled = true;
     showOverlay();
-    checkChromeTranslateState(); // ← 추가
+    checkChromeTranslateState();
   }
 
   if (msg.type === "STOP") {
@@ -362,14 +404,14 @@ chrome.runtime.onMessage.addListener((msg: Msg) => {
   }
 });
 
-// Observe <html> class changes (Chrome Translate hook)
-const htmlObserver = new MutationObserver(() => {
+/**
+ * Chrome 번역 상태 observer
+ */
+new MutationObserver(() => {
   if (!enabled) return;
+  LOG("MutationObserver triggered");
   checkChromeTranslateState();
-});
-
-htmlObserver.observe(document.documentElement, {
+}).observe(document.documentElement, {
   attributes: true,
   attributeFilter: ["class"]
 });
-

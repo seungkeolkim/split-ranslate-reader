@@ -1,6 +1,10 @@
 "use strict";
 (() => {
   // src/content/content.ts
+  var LOG = (...args) => {
+    console.log("[STR-DBG]", ...args);
+  };
+  LOG("content.ts loaded", location.href);
   var enabled = false;
   var overlayRoot = null;
   var originalHtmlMarginRight = null;
@@ -8,7 +12,9 @@
   var PANEL_WIDTH = 420;
   var isFlipped = false;
   function ensureOverlay() {
+    LOG("ensureOverlay()", { exists: !!overlayRoot });
     if (overlayRoot) return overlayRoot;
+    LOG("creating overlay DOM");
     const root = document.createElement("div");
     root.id = "str-overlay-root";
     Object.assign(root.style, {
@@ -46,6 +52,7 @@
     });
     flipBtn.onclick = () => {
       isFlipped = !isFlipped;
+      LOG("flip clicked", { isFlipped });
       applyFlip();
     };
     header.appendChild(title);
@@ -65,9 +72,13 @@
     root.appendChild(body);
     document.documentElement.appendChild(root);
     overlayRoot = root;
+    LOG("overlay created & appended", {
+      display: overlayRoot.style.display
+    });
     return overlayRoot;
   }
   function createColumn(id, label) {
+    LOG("createColumn()", { id, label });
     const col = document.createElement("div");
     col.id = id;
     Object.assign(col.style, {
@@ -95,6 +106,7 @@
     return col;
   }
   function applyFlip() {
+    LOG("applyFlip()", { isFlipped });
     const body = document.getElementById("str-body");
     if (!body) return;
     body.style.direction = isFlipped ? "rtl" : "ltr";
@@ -103,23 +115,31 @@
     });
   }
   function updateOriginal(text) {
+    LOG("updateOriginal()", { text });
     const el = document.querySelector(
       "#str-col-left .str-col-content"
     );
     if (el) el.textContent = text || "Select text on the page.";
   }
   function showOverlay() {
+    LOG("showOverlay()", {
+      enabled,
+      selection: window.getSelection()?.toString()
+    });
     const root = ensureOverlay();
     if (originalHtmlMarginRight === null) {
       originalHtmlMarginRight = document.documentElement.style.marginRight;
       originalBodyOverflowX = document.body.style.overflowX;
       document.documentElement.style.marginRight = `${PANEL_WIDTH}px`;
       document.body.style.overflowX = "hidden";
+      LOG("page layout adjusted");
     }
     root.style.display = "block";
+    LOG("overlay display = block");
     updateOriginal(window.getSelection()?.toString().trim() ?? "");
   }
   function hideOverlay() {
+    LOG("hideOverlay()");
     if (!overlayRoot) return;
     overlayRoot.style.display = "none";
     if (originalHtmlMarginRight !== null) {
@@ -127,15 +147,19 @@
       document.body.style.overflowX = originalBodyOverflowX ?? "";
       originalHtmlMarginRight = null;
       originalBodyOverflowX = null;
+      LOG("page layout restored");
     }
   }
   document.addEventListener("selectionchange", () => {
+    LOG("selectionchange event", { enabled });
     if (!enabled) return;
     if (!overlayRoot || overlayRoot.style.display === "none") return;
     const sel = window.getSelection();
     const text = sel?.toString().trim() ?? "";
+    LOG("selection text", text);
     updateOriginal(text);
     if (text && isChromeTranslated) {
+      LOG("calling updateMatchedTranslation()");
       updateMatchedTranslation(sel);
     }
   });
@@ -143,41 +167,50 @@
   function checkChromeTranslateState() {
     const html = document.documentElement;
     const translated = html.classList.contains("translated-ltr") || html.classList.contains("translated-rtl");
+    LOG("checkChromeTranslateState()", {
+      className: html.className,
+      translated,
+      prev: isChromeTranslated
+    });
     if (translated !== isChromeTranslated) {
       isChromeTranslated = translated;
       onChromeTranslateStateChange(translated);
     }
   }
   function onChromeTranslateStateChange(translated) {
+    LOG("onChromeTranslateStateChange()", translated);
     const el = document.querySelector(
       "#str-col-right .str-col-content"
     );
+    LOG("translation column exists?", !!el);
     if (!el) return;
     if (!translated) {
       el.textContent = "Translation will appear here.";
       return;
     }
     const translatedText = collectTranslatedParagraphs();
+    LOG("translated paragraphs collected", translatedText.length);
     el.textContent = translatedText.length > 0 ? translatedText.join("\n\n") : "(Translated page detected, but no text collected)";
   }
   function collectTranslatedParagraphs() {
-    const TARGET_TAGS = ["P", "H1", "H2", "H3", "LI"];
-    const nodes = Array.from(document.body.querySelectorAll(
-      TARGET_TAGS.join(",")
-    ));
+    const TAGS = ["P", "H1", "H2", "H3", "LI"];
+    const nodes = Array.from(
+      document.body.querySelectorAll(TAGS.join(","))
+    );
+    LOG("collectTranslatedParagraphs()", { nodeCount: nodes.length });
     const results = [];
     for (const el of nodes) {
       const rect = el.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0) continue;
       const text = el.innerText?.trim();
-      if (!text) continue;
-      if (text.length < 30) continue;
+      if (!text || text.length < 30) continue;
       results.push(text);
       if (results.length >= 5) break;
     }
     return results;
   }
   function updateMatchedTranslation(sel) {
+    LOG("updateMatchedTranslation()", sel.toString());
     const el = document.querySelector(
       "#str-col-right .str-col-content"
     );
@@ -187,10 +220,7 @@
     const selRect = range.getBoundingClientRect();
     if (!selRect) return;
     const candidates = collectTranslatedParagraphElements();
-    if (candidates.length === 0) {
-      el.textContent = "(No translated paragraphs found)";
-      return;
-    }
+    LOG("candidate paragraphs", candidates.length);
     let bestEl = null;
     let bestDist = Infinity;
     for (const p of candidates) {
@@ -204,23 +234,18 @@
     }
     if (bestEl) {
       const sentences = splitIntoSentences(bestEl.innerText.trim());
-      const selText = sel.toString().trim();
-      const sentenceCount = selText.length < 80 ? 1 : 2;
-      el.textContent = sentences.slice(0, sentenceCount).join(" ");
+      el.textContent = sentences.slice(0, 2).join(" ");
     }
   }
   function collectTranslatedParagraphElements() {
     const TAGS = ["P", "H1", "H2", "H3", "LI"];
-    const nodes = Array.from(
+    return Array.from(
       document.body.querySelectorAll(TAGS.join(","))
-    );
-    return nodes.filter((el) => {
+    ).filter((el) => {
       const text = el.innerText?.trim();
-      if (!text) return false;
-      if (text.length < 30) return false;
+      if (!text || text.length < 30) return false;
       const rect = el.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) return false;
-      return true;
+      return rect.width > 0 && rect.height > 0;
     });
   }
   function distanceBetweenRects(a, b) {
@@ -231,10 +256,10 @@
     return Math.hypot(ax - bx, ay - by);
   }
   function splitIntoSentences(text) {
-    const raw = text.replace(/\n+/g, " ").split(/(?<=[.!?。！？])\s+/);
-    return raw.map((s) => s.trim()).filter((s) => s.length > 10);
+    return text.replace(/\n+/g, " ").split(/(?<=[.!?。！？])\s+/).map((s) => s.trim()).filter((s) => s.length > 10);
   }
   chrome.runtime.onMessage.addListener((msg) => {
+    LOG("onMessage()", msg);
     if (msg.type === "START") {
       enabled = true;
       showOverlay();
@@ -245,11 +270,11 @@
       hideOverlay();
     }
   });
-  var htmlObserver = new MutationObserver(() => {
+  new MutationObserver(() => {
     if (!enabled) return;
+    LOG("MutationObserver triggered");
     checkChromeTranslateState();
-  });
-  htmlObserver.observe(document.documentElement, {
+  }).observe(document.documentElement, {
     attributes: true,
     attributeFilter: ["class"]
   });

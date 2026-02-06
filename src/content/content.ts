@@ -23,6 +23,74 @@ function log(...args: any[]) {
 }
 
 // =====================
+// Paragraph / Block Utils
+// =====================
+
+const BLOCK_SELECTOR = "p, li, h1, h2, h3, h4, h5, h6";
+
+/**
+ * selection이 속한 가장 가까운 block element 찾기
+ */
+function findBlockFromSelection(
+  sel: Selection,
+  root: ParentNode
+): HTMLElement | null {
+  if (sel.rangeCount === 0) return null;
+
+  let node: Node | null = sel.getRangeAt(0).startContainer;
+
+  while (node) {
+    if (node instanceof HTMLElement) {
+      if (node.matches(BLOCK_SELECTOR) && root.contains(node)) {
+        return node;
+      }
+    }
+    node = node.parentNode;
+  }
+
+  return null;
+}
+
+/**
+ * block element의 index 계산
+ */
+function getBlockIndex(block: HTMLElement, root: ParentNode): number {
+  const blocks = Array.from(
+    root.querySelectorAll<HTMLElement>(BLOCK_SELECTOR)
+  );
+  return blocks.indexOf(block);
+}
+
+/**
+ * index로 block 찾기
+ */
+function getBlockByIndex(
+  index: number,
+  root: ParentNode
+): HTMLElement | null {
+  const blocks = Array.from(
+    root.querySelectorAll<HTMLElement>(BLOCK_SELECTOR)
+  );
+  return blocks[index] ?? null;
+}
+
+/**
+ * block 하이라이트 (임시)
+ */
+function highlightBlock(el: HTMLElement) {
+  el.scrollIntoView({ block: "center", behavior: "smooth" });
+
+  const prev = el.style.outline;
+  el.style.outline = "3px solid rgba(255, 120, 0, 0.8)";
+
+  setTimeout(() => {
+    el.style.outline = prev;
+  }, 1200);
+}
+
+
+
+// =====================
 // Snapshot (전략2 핵심)
 // =====================
 function captureSnapshotOnce() {
@@ -66,6 +134,44 @@ function captureSnapshotOnce() {
 function escapeHtml(s: string) {
   return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 }
+
+// =====================
+// Block utilities
+// =====================
+
+function collectBlocks(root: Document | HTMLElement): HTMLElement[] {
+  return Array.from(
+    root.querySelectorAll<HTMLElement>(BLOCK_SELECTOR)
+  ).filter(el => {
+    const text = el.innerText?.trim();
+    if (!text || text.length < 20) return false;
+
+    const rect = el.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  });
+}
+
+function findBlockIndexFromSelection(
+  doc: Document,
+  sel: Selection
+): number | null {
+  if (!sel.rangeCount) return null;
+
+  let node: Node | null = sel.getRangeAt(0).startContainer;
+
+  while (node && node !== doc.body) {
+    if (node instanceof HTMLElement && node.matches(BLOCK_SELECTOR)) {
+      const blocks = collectBlocks(doc);
+      const idx = blocks.indexOf(node);
+      log("findBlockIndexFromSelection", idx);
+      return idx >= 0 ? idx : null;
+    }
+    node = node.parentNode;
+  }
+  return null;
+}
+
+
 
 // =====================
 // Split UI
@@ -126,7 +232,89 @@ ${bodyHTML}
 
   leftIframe.srcdoc = srcdoc;
 
+  // =====================
+  // LEFT iframe drag detect (원문)
+  // =====================
+  leftIframe.addEventListener("load", () => {
+    const iframeDoc = leftIframe?.contentDocument;
+    if (!iframeDoc) {
+      log("left iframe load but no document");
+      return;
+    }
+
+    log("left iframe document ready, attach selection listener");
+
+    iframeDoc.addEventListener("selectionchange", () => {
+      const sel = iframeDoc.getSelection();
+      const text = sel?.toString().trim() ?? "";
+
+      if (text.length === 0) return;
+
+      const block = findBlockFromSelection(sel!, iframeDoc.body);
+
+      if (!block) {
+        log("LEFT iframe selection but no block found");
+        return;
+      }
+
+      const index = getBlockIndex(block, iframeDoc.body);
+
+      log("LEFT iframe block detected", {
+        index,
+        tag: block.tagName,
+        preview: block.innerText.slice(0, 80),
+      });
+
+      // 반대편(RIGHT)으로 반영
+      if (rightPane) {
+        const target = getBlockByIndex(index, rightPane);
+        if (target) {
+          log("LEFT → RIGHT highlight", { index });
+          highlightBlock(target);
+        } else {
+          log("LEFT → RIGHT block not found", { index });
+        }
+      }
+
+
+    });
+  });
+
+
   leftPane.appendChild(leftIframe);
+
+  leftIframe.addEventListener("load", () => {
+    const iframeDoc = leftIframe?.contentDocument;
+    if (!iframeDoc) return;
+
+    log("leftIframe selection listener attached");
+
+    iframeDoc.addEventListener("selectionchange", () => {
+      const sel = iframeDoc.getSelection();
+      if (!sel || sel.isCollapsed) return;
+
+      clearHighlights();
+
+      const leftBlocks = collectBlocks(iframeDoc);
+      const rightDoc = document;
+      const rightBlocks = collectBlocks(rightDoc);
+
+      const idx = findBlockIndexFromSelection(iframeDoc, sel);
+      if (idx === null) return;
+
+      log("block match index", idx);
+
+      if (leftBlocks[idx]) {
+        highlightBlock(leftBlocks[idx], "rgba(255,200,120,0.5)");
+      }
+
+      if (rightBlocks[idx]) {
+        highlightBlock(rightBlocks[idx], "rgba(180,220,255,0.45)");
+        rightBlocks[idx].scrollIntoView({ block: "center" });
+      }
+    });
+  });
+
 
   // Right pane (라이브 페이지, Chrome 번역 대상)
   rightPane = document.createElement("div");
@@ -158,6 +346,45 @@ ${bodyHTML}
   });
 
   setupScrollSync();
+
+  // =====================
+  // RIGHT pane drag detect (번역/live DOM)
+  // =====================
+  rightPane.addEventListener("mouseup", () => {
+    const sel = window.getSelection();
+    const text = sel?.toString().trim() ?? "";
+
+    if (text.length === 0) return;
+
+    const block = findBlockFromSelection(sel!, rightPane!);
+
+    if (!block) {
+      log("RIGHT pane selection but no block found");
+      return;
+    }
+
+    const index = getBlockIndex(block, rightPane!);
+
+    log("RIGHT pane block detected", {
+      index,
+      tag: block.tagName,
+      preview: block.innerText.slice(0, 80),
+    });
+
+    // 반대편(LEFT iframe)으로 반영
+    const iframeDoc = leftIframe?.contentDocument;
+    if (iframeDoc) {
+      const target = getBlockByIndex(index, iframeDoc.body);
+      if (target) {
+        log("RIGHT → LEFT highlight", { index });
+        highlightBlock(target);
+      } else {
+        log("RIGHT → LEFT block not found", { index });
+      }
+    }
+
+  });
+
 }
 
 function teardownSplitUI() {
@@ -225,6 +452,36 @@ function setupScrollSync() {
     }
   });
 }
+
+// =====================
+// Highlight overlay
+// =====================
+let activeHighlights: HTMLElement[] = [];
+
+function clearHighlights() {
+  activeHighlights.forEach(el => el.remove());
+  activeHighlights = [];
+}
+
+// function highlightBlock(el: HTMLElement, color = "rgba(255,230,150,0.6)") {
+//   const rect = el.getBoundingClientRect();
+//   const overlay = document.createElement("div");
+
+//   Object.assign(overlay.style, {
+//     position: "fixed",
+//     left: `${rect.left}px`,
+//     top: `${rect.top}px`,
+//     width: `${rect.width}px`,
+//     height: `${rect.height}px`,
+//     background: color,
+//     pointerEvents: "none",
+//     zIndex: "2147483646",
+//   });
+
+//   document.body.appendChild(overlay);
+//   activeHighlights.push(overlay);
+// }
+
 
 // =====================
 // Chrome 메시지

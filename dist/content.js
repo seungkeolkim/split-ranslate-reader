@@ -12,6 +12,40 @@
   function log(...args) {
     console.log("[STR-DBG]", ...args);
   }
+  var BLOCK_SELECTOR = "p, li, h1, h2, h3, h4, h5, h6";
+  function findBlockFromSelection(sel, root) {
+    if (sel.rangeCount === 0) return null;
+    let node = sel.getRangeAt(0).startContainer;
+    while (node) {
+      if (node instanceof HTMLElement) {
+        if (node.matches(BLOCK_SELECTOR) && root.contains(node)) {
+          return node;
+        }
+      }
+      node = node.parentNode;
+    }
+    return null;
+  }
+  function getBlockIndex(block, root) {
+    const blocks = Array.from(
+      root.querySelectorAll(BLOCK_SELECTOR)
+    );
+    return blocks.indexOf(block);
+  }
+  function getBlockByIndex(index, root) {
+    const blocks = Array.from(
+      root.querySelectorAll(BLOCK_SELECTOR)
+    );
+    return blocks[index] ?? null;
+  }
+  function highlightBlock(el) {
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    const prev = el.style.outline;
+    el.style.outline = "3px solid rgba(255, 120, 0, 0.8)";
+    setTimeout(() => {
+      el.style.outline = prev;
+    }, 1200);
+  }
   function captureSnapshotOnce() {
     if (originalSnapshotBodyHTML !== null) return;
     log("captureSnapshotOnce() start");
@@ -38,6 +72,30 @@
   }
   function escapeHtml(s) {
     return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+  }
+  function collectBlocks(root) {
+    return Array.from(
+      root.querySelectorAll(BLOCK_SELECTOR)
+    ).filter((el) => {
+      const text = el.innerText?.trim();
+      if (!text || text.length < 20) return false;
+      const rect = el.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    });
+  }
+  function findBlockIndexFromSelection(doc, sel) {
+    if (!sel.rangeCount) return null;
+    let node = sel.getRangeAt(0).startContainer;
+    while (node && node !== doc.body) {
+      if (node instanceof HTMLElement && node.matches(BLOCK_SELECTOR)) {
+        const blocks = collectBlocks(doc);
+        const idx = blocks.indexOf(node);
+        log("findBlockIndexFromSelection", idx);
+        return idx >= 0 ? idx : null;
+      }
+      node = node.parentNode;
+    }
+    return null;
   }
   function ensureSplitUI() {
     if (splitRoot) return;
@@ -82,7 +140,63 @@ ${bodyHTML}
 </body>
 </html>`;
     leftIframe.srcdoc = srcdoc;
+    leftIframe.addEventListener("load", () => {
+      const iframeDoc = leftIframe?.contentDocument;
+      if (!iframeDoc) {
+        log("left iframe load but no document");
+        return;
+      }
+      log("left iframe document ready, attach selection listener");
+      iframeDoc.addEventListener("selectionchange", () => {
+        const sel = iframeDoc.getSelection();
+        const text = sel?.toString().trim() ?? "";
+        if (text.length === 0) return;
+        const block = findBlockFromSelection(sel, iframeDoc.body);
+        if (!block) {
+          log("LEFT iframe selection but no block found");
+          return;
+        }
+        const index = getBlockIndex(block, iframeDoc.body);
+        log("LEFT iframe block detected", {
+          index,
+          tag: block.tagName,
+          preview: block.innerText.slice(0, 80)
+        });
+        if (rightPane) {
+          const target = getBlockByIndex(index, rightPane);
+          if (target) {
+            log("LEFT \u2192 RIGHT highlight", { index });
+            highlightBlock(target);
+          } else {
+            log("LEFT \u2192 RIGHT block not found", { index });
+          }
+        }
+      });
+    });
     leftPane.appendChild(leftIframe);
+    leftIframe.addEventListener("load", () => {
+      const iframeDoc = leftIframe?.contentDocument;
+      if (!iframeDoc) return;
+      log("leftIframe selection listener attached");
+      iframeDoc.addEventListener("selectionchange", () => {
+        const sel = iframeDoc.getSelection();
+        if (!sel || sel.isCollapsed) return;
+        clearHighlights();
+        const leftBlocks = collectBlocks(iframeDoc);
+        const rightDoc = document;
+        const rightBlocks = collectBlocks(rightDoc);
+        const idx = findBlockIndexFromSelection(iframeDoc, sel);
+        if (idx === null) return;
+        log("block match index", idx);
+        if (leftBlocks[idx]) {
+          highlightBlock(leftBlocks[idx], "rgba(255,200,120,0.5)");
+        }
+        if (rightBlocks[idx]) {
+          highlightBlock(rightBlocks[idx], "rgba(180,220,255,0.45)");
+          rightBlocks[idx].scrollIntoView({ block: "center" });
+        }
+      });
+    });
     rightPane = document.createElement("div");
     rightPane.id = "str-right-pane";
     Object.assign(rightPane.style, {
@@ -106,6 +220,32 @@ ${bodyHTML}
       leftIframe: !!leftIframe
     });
     setupScrollSync();
+    rightPane.addEventListener("mouseup", () => {
+      const sel = window.getSelection();
+      const text = sel?.toString().trim() ?? "";
+      if (text.length === 0) return;
+      const block = findBlockFromSelection(sel, rightPane);
+      if (!block) {
+        log("RIGHT pane selection but no block found");
+        return;
+      }
+      const index = getBlockIndex(block, rightPane);
+      log("RIGHT pane block detected", {
+        index,
+        tag: block.tagName,
+        preview: block.innerText.slice(0, 80)
+      });
+      const iframeDoc = leftIframe?.contentDocument;
+      if (iframeDoc) {
+        const target = getBlockByIndex(index, iframeDoc.body);
+        if (target) {
+          log("RIGHT \u2192 LEFT highlight", { index });
+          highlightBlock(target);
+        } else {
+          log("RIGHT \u2192 LEFT block not found", { index });
+        }
+      }
+    });
   }
   function teardownSplitUI() {
     log("teardownSplitUI() start");
@@ -150,6 +290,11 @@ ${bodyHTML}
         log("scrollSync error", e);
       }
     });
+  }
+  var activeHighlights = [];
+  function clearHighlights() {
+    activeHighlights.forEach((el) => el.remove());
+    activeHighlights = [];
   }
   chrome.runtime.onMessage.addListener((msg) => {
     log("onMessage", msg);

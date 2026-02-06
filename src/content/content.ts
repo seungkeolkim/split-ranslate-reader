@@ -256,7 +256,13 @@ function updateMatchedTranslation(sel: Selection) {
   }
 
   if (bestEl) {
-    el.textContent = bestEl.innerText.trim();
+    const sentences = splitIntoSentences(bestEl.innerText.trim());
+
+    // 선택 길이에 따라 표시할 문장 수 결정 (MVP heuristic)
+    const selText = sel.toString().trim();
+    const sentenceCount = selText.length < 80 ? 1 : 2;
+
+    el.textContent = sentences.slice(0, sentenceCount).join(" ");
   }
 }
 
@@ -288,6 +294,18 @@ function distanceBetweenRects(a: DOMRect, b: DOMRect): number {
 
   return Math.hypot(ax - bx, ay - by);
 }
+
+function splitIntoSentences(text: string): string[] {
+  // 매우 보수적인 문장 분리 (MVP)
+  const raw = text
+    .replace(/\n+/g, " ")
+    .split(/(?<=[.!?。！？])\s+/);
+
+  return raw
+    .map(s => s.trim())
+    .filter(s => s.length > 10);
+}
+
 
 
 

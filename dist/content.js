@@ -190,7 +190,10 @@
       }
     }
     if (bestEl) {
-      el.textContent = bestEl.innerText.trim();
+      const sentences = splitIntoSentences(bestEl.innerText.trim());
+      const selText = sel.toString().trim();
+      const sentenceCount = selText.length < 80 ? 1 : 2;
+      el.textContent = sentences.slice(0, sentenceCount).join(" ");
     }
   }
   function collectTranslatedParagraphElements() {
@@ -213,6 +216,10 @@
     const bx = b.left + b.width / 2;
     const by = b.top + b.height / 2;
     return Math.hypot(ax - bx, ay - by);
+  }
+  function splitIntoSentences(text) {
+    const raw = text.replace(/\n+/g, " ").split(/(?<=[.!?。！？])\s+/);
+    return raw.map((s) => s.trim()).filter((s) => s.length > 10);
   }
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.type === "START") {

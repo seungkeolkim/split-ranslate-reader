@@ -1,0 +1,16 @@
+body {
+  font-family: system-ui, sans-serif;
+  width: 300px;
+  padding: 12px;
+}
+
+h1 {
+  font-size: 16px;
+  margin-bottom: 12px;
+}
+
+select, button {
+  width: 100%;
+  margin-top: 8px;
+  padding: 8px;
+}

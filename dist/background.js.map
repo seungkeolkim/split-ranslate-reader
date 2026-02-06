@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["../src/background/background.ts"],
+  "sourcesContent": ["chrome.runtime.onInstalled.addListener(() => {\n  chrome.storage.sync.get([\"targetLang\"], (res) => {\n    if (!res.targetLang) {\n      chrome.storage.sync.set({ targetLang: \"auto\" });\n    }\n  });\n});\n"],
+  "mappings": ";;;AAAA,SAAO,QAAQ,YAAY,YAAY,MAAM;AAC3C,WAAO,QAAQ,KAAK,IAAI,CAAC,YAAY,GAAG,CAAC,QAAQ;AAC/C,UAAI,CAAC,IAAI,YAAY;AACnB,eAAO,QAAQ,KAAK,IAAI,EAAE,YAAY,OAAO,CAAC;AAAA,MAChD;AAAA,IACF,CAAC;AAAA,EACH,CAAC;",
+  "names": []
+}

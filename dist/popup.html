@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="./popup.css" />
+  <title>Split Translate Reader</title>
+</head>
+<body>
+  <h1>Split Translate Reader</h1>
+
+  <label>
+    Target language
+    <select id="targetLang">
+      <option value="auto">Auto</option>
+      <option value="ko">Korean</option>
+      <option value="en">English</option>
+      <option value="ja">Japanese</option>
+      <option value="zh-CN">Chinese (CN)</option>
+      <option value="zh-TW">Chinese (TW)</option>
+    </select>
+  </label>
+
+  <button id="toggle">Toggle Overlay</button>
+
+  <script type="module" src="./popup.js"></script>
+</body>
+</html>

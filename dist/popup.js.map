@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["../src/popup/popup.ts"],
+  "sourcesContent": ["import { TargetLang } from \"../shared/types\";\n\nconst select = document.getElementById(\"targetLang\") as HTMLSelectElement;\nconst toggle = document.getElementById(\"toggle\") as HTMLButtonElement;\n\nchrome.storage.sync.get([\"targetLang\"], (res) => {\n  select.value = (res.targetLang ?? \"auto\") as TargetLang;\n});\n\nselect.addEventListener(\"change\", () => {\n  chrome.storage.sync.set({ targetLang: select.value });\n});\n\ntoggle.addEventListener(\"click\", async () => {\n  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });\n  if (tab?.id) {\n    chrome.tabs.sendMessage(tab.id, { type: \"TOGGLE_OVERLAY\" });\n  }\n});\n"],
+  "mappings": ";;;AAEA,MAAM,SAAS,SAAS,eAAe,YAAY;AACnD,MAAM,SAAS,SAAS,eAAe,QAAQ;AAE/C,SAAO,QAAQ,KAAK,IAAI,CAAC,YAAY,GAAG,CAAC,QAAQ;AAC/C,WAAO,QAAS,IAAI,cAAc;AAAA,EACpC,CAAC;AAED,SAAO,iBAAiB,UAAU,MAAM;AACtC,WAAO,QAAQ,KAAK,IAAI,EAAE,YAAY,OAAO,MAAM,CAAC;AAAA,EACtD,CAAC;AAED,SAAO,iBAAiB,SAAS,YAAY;AAC3C,UAAM,CAAC,GAAG,IAAI,MAAM,OAAO,KAAK,MAAM,EAAE,QAAQ,MAAM,eAAe,KAAK,CAAC;AAC3E,QAAI,KAAK,IAAI;AACX,aAAO,KAAK,YAAY,IAAI,IAAI,EAAE,MAAM,iBAAiB,CAAC;AAAA,IAC5D;AAAA,EACF,CAAC;",
+  "names": []
+}

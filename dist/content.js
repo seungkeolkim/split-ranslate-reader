@@ -1,282 +1,554 @@
 "use strict";
 (() => {
   // src/content/content.ts
-  var LOG = (...args) => {
-    console.log("[STR-DBG]", ...args);
-  };
-  LOG("content.ts loaded", location.href);
   var enabled = false;
-  var overlayRoot = null;
-  var originalHtmlMarginRight = null;
-  var originalBodyOverflowX = null;
-  var PANEL_WIDTH = 420;
-  var isFlipped = false;
-  function ensureOverlay() {
-    LOG("ensureOverlay()", { exists: !!overlayRoot });
-    if (overlayRoot) return overlayRoot;
-    LOG("creating overlay DOM");
-    const root = document.createElement("div");
-    root.id = "str-overlay-root";
-    Object.assign(root.style, {
-      position: "fixed",
-      top: "0",
-      right: "0",
-      width: `${PANEL_WIDTH}px`,
-      height: "100vh",
-      background: "#fff",
-      borderLeft: "1px solid #e5e5e5",
-      zIndex: "2147483647",
-      display: "none",
-      overflow: "hidden",
-      fontFamily: "system-ui, sans-serif"
-    });
-    const header = document.createElement("div");
-    Object.assign(header.style, {
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "space-between",
-      padding: "8px 10px",
-      borderBottom: "1px solid #eee"
-    });
-    const title = document.createElement("div");
-    title.textContent = "Split Translate Reader";
-    title.style.fontWeight = "700";
-    const flipBtn = document.createElement("button");
-    flipBtn.textContent = "\u2194 Flip";
-    Object.assign(flipBtn.style, {
-      padding: "6px 10px",
-      borderRadius: "8px",
-      border: "1px solid #ccc",
-      background: "#f7f7f7",
-      cursor: "pointer"
-    });
-    flipBtn.onclick = () => {
-      isFlipped = !isFlipped;
-      LOG("flip clicked", { isFlipped });
-      applyFlip();
-    };
-    header.appendChild(title);
-    header.appendChild(flipBtn);
-    const body = document.createElement("div");
-    body.id = "str-body";
-    Object.assign(body.style, {
-      display: "grid",
-      gridTemplateColumns: "1fr 1fr",
-      height: "100%"
-    });
-    const colLeft = createColumn("str-col-left", "Original");
-    const colRight = createColumn("str-col-right", "Translation");
-    body.appendChild(colLeft);
-    body.appendChild(colRight);
-    root.appendChild(header);
-    root.appendChild(body);
-    document.documentElement.appendChild(root);
-    overlayRoot = root;
-    LOG("overlay created & appended", {
-      display: overlayRoot.style.display
-    });
-    return overlayRoot;
-  }
-  function createColumn(id, label) {
-    LOG("createColumn()", { id, label });
-    const col = document.createElement("div");
-    col.id = id;
-    Object.assign(col.style, {
-      padding: "10px",
-      overflow: "auto",
-      borderRight: label === "Original" ? "1px solid #eee" : "none"
-    });
-    const tag = document.createElement("div");
-    tag.textContent = label;
-    Object.assign(tag.style, {
-      fontSize: "11px",
-      color: "#666",
-      marginBottom: "6px"
-    });
-    const content = document.createElement("div");
-    content.className = "str-col-content";
-    Object.assign(content.style, {
-      fontSize: "13px",
-      color: "#111",
-      whiteSpace: "pre-wrap"
-    });
-    content.textContent = label === "Original" ? "Select text on the page." : "Translation will appear here.";
-    col.appendChild(tag);
-    col.appendChild(content);
-    return col;
-  }
-  function applyFlip() {
-    LOG("applyFlip()", { isFlipped });
-    const body = document.getElementById("str-body");
-    if (!body) return;
-    body.style.direction = isFlipped ? "rtl" : "ltr";
-    body.querySelectorAll(".str-col-content").forEach((el) => {
-      el.style.direction = "ltr";
-    });
-  }
-  function updateOriginal(text) {
-    LOG("updateOriginal()", { text });
-    const el = document.querySelector(
-      "#str-col-left .str-col-content"
-    );
-    if (el) el.textContent = text || "Select text on the page.";
-  }
-  function showOverlay() {
-    LOG("showOverlay()", {
-      enabled,
-      selection: window.getSelection()?.toString()
-    });
-    const root = ensureOverlay();
-    if (originalHtmlMarginRight === null) {
-      originalHtmlMarginRight = document.documentElement.style.marginRight;
-      originalBodyOverflowX = document.body.style.overflowX;
-      document.documentElement.style.marginRight = `${PANEL_WIDTH}px`;
-      document.body.style.overflowX = "hidden";
-      LOG("page layout adjusted");
+  var splitRoot = null;
+  var leftPane = null;
+  var rightPane = null;
+  var leftIframe = null;
+  var originalSnapshotBodyHTML = null;
+  var originalSnapshotHeadHTML = null;
+  var SPLIT_LEFT_RATIO = 0.5;
+  var currentURL = location.href;
+  var navigationDetector = null;
+  var STORAGE_KEY = "str_enabled_state";
+  var logHistory = [];
+  function log(...args) {
+    const timestamp = (/* @__PURE__ */ new Date()).toISOString().split("T")[1].slice(0, -1);
+    const message = `[${timestamp}] [STR-DBG] ${args.map((a) => typeof a === "object" ? JSON.stringify(a) : a).join(" ")}`;
+    console.log("[STR-DBG]", ...args);
+    logHistory.push(message);
+    if (logHistory.length > 500) {
+      logHistory.shift();
     }
-    root.style.display = "block";
-    LOG("overlay display = block");
-    updateOriginal(window.getSelection()?.toString().trim() ?? "");
-  }
-  function hideOverlay() {
-    LOG("hideOverlay()");
-    if (!overlayRoot) return;
-    overlayRoot.style.display = "none";
-    if (originalHtmlMarginRight !== null) {
-      document.documentElement.style.marginRight = originalHtmlMarginRight ?? "";
-      document.body.style.overflowX = originalBodyOverflowX ?? "";
-      originalHtmlMarginRight = null;
-      originalBodyOverflowX = null;
-      LOG("page layout restored");
+    try {
+      chrome.runtime.sendMessage({
+        type: "LOG",
+        timestamp,
+        data: args
+      }).catch(() => {
+      });
+    } catch (e) {
     }
   }
-  document.addEventListener("selectionchange", () => {
-    LOG("selectionchange event", { enabled });
-    if (!enabled) return;
-    if (!overlayRoot || overlayRoot.style.display === "none") return;
-    const sel = window.getSelection();
-    const text = sel?.toString().trim() ?? "";
-    LOG("selection text", text);
-    updateOriginal(text);
-    if (text && isChromeTranslated) {
-      LOG("calling updateMatchedTranslation()");
-      updateMatchedTranslation(sel);
-    }
-  });
-  var isChromeTranslated = false;
-  function checkChromeTranslateState() {
-    const html = document.documentElement;
-    const translated = html.classList.contains("translated-ltr") || html.classList.contains("translated-rtl");
-    LOG("checkChromeTranslateState()", {
-      className: html.className,
-      translated,
-      prev: isChromeTranslated
-    });
-    if (translated !== isChromeTranslated) {
-      isChromeTranslated = translated;
-      onChromeTranslateStateChange(translated);
+  window.showSTRLogs = () => {
+    console.log("=== STR Log History ===");
+    logHistory.forEach((log2) => console.log(log2));
+    console.log("======================");
+  };
+  async function saveEnabledState(value) {
+    log("\u{1F4BE} Saving enabled state to storage:", value);
+    try {
+      await chrome.storage.local.set({ [STORAGE_KEY]: value });
+      log("\u2705 State saved successfully");
+    } catch (e) {
+      log("\u274C Failed to save state:", e);
     }
   }
-  function onChromeTranslateStateChange(translated) {
-    LOG("onChromeTranslateStateChange()", translated);
-    const el = document.querySelector(
-      "#str-col-right .str-col-content"
-    );
-    LOG("translation column exists?", !!el);
-    if (!el) return;
-    if (!translated) {
-      el.textContent = "Translation will appear here.";
-      return;
+  async function restoreEnabledState() {
+    log("\u{1F4C2} Restoring enabled state from storage...");
+    try {
+      const result = await chrome.storage.local.get(STORAGE_KEY);
+      const savedState = result[STORAGE_KEY] ?? false;
+      log("\u2705 State restored:", savedState);
+      return savedState;
+    } catch (e) {
+      log("\u274C Failed to restore state:", e);
+      return false;
     }
-    const translatedText = collectTranslatedParagraphs();
-    LOG("translated paragraphs collected", translatedText.length);
-    el.textContent = translatedText.length > 0 ? translatedText.join("\n\n") : "(Translated page detected, but no text collected)";
   }
-  function collectTranslatedParagraphs() {
-    const TAGS = ["P", "H1", "H2", "H3", "LI"];
-    const nodes = Array.from(
-      document.body.querySelectorAll(TAGS.join(","))
-    );
-    LOG("collectTranslatedParagraphs()", { nodeCount: nodes.length });
-    const results = [];
-    for (const el of nodes) {
-      const rect = el.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) continue;
-      const text = el.innerText?.trim();
-      if (!text || text.length < 30) continue;
-      results.push(text);
-      if (results.length >= 5) break;
-    }
-    return results;
-  }
-  function updateMatchedTranslation(sel) {
-    LOG("updateMatchedTranslation()", sel.toString());
-    const el = document.querySelector(
-      "#str-col-right .str-col-content"
-    );
-    if (!el) return;
-    const range = sel.rangeCount > 0 ? sel.getRangeAt(0) : null;
-    if (!range) return;
-    const selRect = range.getBoundingClientRect();
-    if (!selRect) return;
-    const candidates = collectTranslatedParagraphElements();
-    LOG("candidate paragraphs", candidates.length);
-    let bestEl = null;
-    let bestDist = Infinity;
-    for (const p of candidates) {
-      const rect = p.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) continue;
-      const dist = distanceBetweenRects(selRect, rect);
-      if (dist < bestDist) {
-        bestDist = dist;
-        bestEl = p;
+  var BLOCK_SELECTOR = "p, li, h1, h2, h3, h4, h5, h6";
+  function findBlockFromSelection(sel, root) {
+    if (sel.rangeCount === 0) return null;
+    let node = sel.getRangeAt(0).startContainer;
+    while (node) {
+      if (node instanceof HTMLElement) {
+        if (node.matches(BLOCK_SELECTOR) && root.contains(node)) {
+          return node;
+        }
       }
+      node = node.parentNode;
     }
-    if (bestEl) {
-      const sentences = splitIntoSentences(bestEl.innerText.trim());
-      el.textContent = sentences.slice(0, 2).join(" ");
-    }
+    return null;
   }
-  function collectTranslatedParagraphElements() {
-    const TAGS = ["P", "H1", "H2", "H3", "LI"];
+  function getBlockIndex(block, root) {
+    const blocks = Array.from(
+      root.querySelectorAll(BLOCK_SELECTOR)
+    );
+    return blocks.indexOf(block);
+  }
+  function getBlockByIndex(index, root) {
+    const blocks = Array.from(
+      root.querySelectorAll(BLOCK_SELECTOR)
+    );
+    return blocks[index] ?? null;
+  }
+  function highlightBlock(el) {
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    const prev = el.style.outline;
+    el.style.outline = "3px solid rgba(255, 120, 0, 0.8)";
+    setTimeout(() => {
+      el.style.outline = prev;
+    }, 1200);
+  }
+  function captureSnapshotOnce() {
+    if (originalSnapshotBodyHTML !== null) return;
+    log("captureSnapshotOnce() start");
+    const bodyClone = document.body.cloneNode(true);
+    bodyClone.querySelectorAll("script, noscript").forEach((n) => n.remove());
+    originalSnapshotBodyHTML = bodyClone.innerHTML;
+    const head = document.head;
+    const cssNodes = Array.from(
+      head.querySelectorAll('link[rel="stylesheet"], style')
+    );
+    const baseHref = location.href;
+    const headParts = [];
+    headParts.push(`<base href="${escapeHtml(baseHref)}">`);
+    headParts.push(`<meta charset="utf-8">`);
+    headParts.push(`<meta name="google" content="notranslate">`);
+    for (const n of cssNodes) {
+      headParts.push(n.outerHTML);
+    }
+    originalSnapshotHeadHTML = headParts.join("\n");
+    log("captureSnapshotOnce() done", {
+      bodyLen: originalSnapshotBodyHTML.length,
+      headLen: originalSnapshotHeadHTML.length
+    });
+  }
+  function escapeHtml(s) {
+    return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+  }
+  function collectBlocks(root) {
     return Array.from(
-      document.body.querySelectorAll(TAGS.join(","))
+      root.querySelectorAll(BLOCK_SELECTOR)
     ).filter((el) => {
       const text = el.innerText?.trim();
-      if (!text || text.length < 30) return false;
+      if (!text || text.length < 20) return false;
       const rect = el.getBoundingClientRect();
       return rect.width > 0 && rect.height > 0;
     });
   }
-  function distanceBetweenRects(a, b) {
-    const ax = a.left + a.width / 2;
-    const ay = a.top + a.height / 2;
-    const bx = b.left + b.width / 2;
-    const by = b.top + b.height / 2;
-    return Math.hypot(ax - bx, ay - by);
+  function findBlockIndexFromSelection(doc, sel) {
+    if (!sel.rangeCount) return null;
+    let node = sel.getRangeAt(0).startContainer;
+    while (node && node !== doc.body) {
+      if (node instanceof HTMLElement && node.matches(BLOCK_SELECTOR)) {
+        const blocks = collectBlocks(doc);
+        const idx = blocks.indexOf(node);
+        log("findBlockIndexFromSelection", idx);
+        return idx >= 0 ? idx : null;
+      }
+      node = node.parentNode;
+    }
+    return null;
   }
-  function splitIntoSentences(text) {
-    return text.replace(/\n+/g, " ").split(/(?<=[.!?。！？])\s+/).map((s) => s.trim()).filter((s) => s.length > 10);
+  function ensureSplitUI() {
+    if (splitRoot) {
+      log("\u26A0\uFE0F ensureSplitUI() - splitRoot already exists");
+      return;
+    }
+    log("\u{1F3D7}\uFE0F ensureSplitUI() CREATE START");
+    log("\u{1F4CA} Snapshot status:", {
+      bodyHTML: originalSnapshotBodyHTML ? `${originalSnapshotBodyHTML.length} chars` : "null",
+      headHTML: originalSnapshotHeadHTML ? `${originalSnapshotHeadHTML.length} chars` : "null"
+    });
+    splitRoot = document.createElement("div");
+    splitRoot.id = "str-split-root";
+    Object.assign(splitRoot.style, {
+      position: "fixed",
+      inset: "0",
+      zIndex: "2147483647",
+      display: "flex",
+      background: "#fff"
+    });
+    leftPane = document.createElement("div");
+    leftPane.id = "str-left-pane";
+    Object.assign(leftPane.style, {
+      width: `${Math.round(SPLIT_LEFT_RATIO * 100)}%`,
+      height: "100%",
+      borderRight: "1px solid #ddd",
+      background: "#fff"
+    });
+    leftPane.classList.add("notranslate");
+    leftPane.setAttribute("translate", "no");
+    leftIframe = document.createElement("iframe");
+    leftIframe.id = "str-left-iframe";
+    Object.assign(leftIframe.style, {
+      width: "100%",
+      height: "100%",
+      border: "0",
+      display: "block",
+      background: "#fff"
+    });
+    const headHTML = originalSnapshotHeadHTML ?? `<meta charset="utf-8"><meta name="google" content="notranslate">`;
+    const bodyHTML = originalSnapshotBodyHTML ?? "";
+    const srcdoc = `<!doctype html>
+<html translate="no" class="notranslate">
+<head>
+${headHTML}
+</head>
+<body translate="no" class="notranslate">
+${bodyHTML}
+</body>
+</html>`;
+    leftIframe.srcdoc = srcdoc;
+    leftIframe.addEventListener("load", () => {
+      const iframeDoc = leftIframe?.contentDocument;
+      if (!iframeDoc) {
+        log("left iframe load but no document");
+        return;
+      }
+      log("left iframe document ready, attach selection listener");
+      iframeDoc.addEventListener("selectionchange", () => {
+        const sel = iframeDoc.getSelection();
+        const text = sel?.toString().trim() ?? "";
+        if (text.length === 0) return;
+        const block = findBlockFromSelection(sel, iframeDoc.body);
+        if (!block) {
+          log("LEFT iframe selection but no block found");
+          return;
+        }
+        const index = getBlockIndex(block, iframeDoc.body);
+        log("LEFT iframe block detected", {
+          index,
+          tag: block.tagName,
+          preview: block.innerText.slice(0, 80)
+        });
+        if (rightPane) {
+          const target = getBlockByIndex(index, rightPane);
+          if (target) {
+            log("LEFT \u2192 RIGHT highlight", { index });
+            highlightBlock(target);
+          } else {
+            log("LEFT \u2192 RIGHT block not found", { index });
+          }
+        }
+      });
+    });
+    leftPane.appendChild(leftIframe);
+    leftIframe.addEventListener("load", () => {
+      const iframeDoc = leftIframe?.contentDocument;
+      if (!iframeDoc) return;
+      log("leftIframe selection listener attached");
+      iframeDoc.addEventListener("selectionchange", () => {
+        const sel = iframeDoc.getSelection();
+        if (!sel || sel.isCollapsed) return;
+        clearHighlights();
+        const leftBlocks = collectBlocks(iframeDoc);
+        const rightDoc = document;
+        const rightBlocks = collectBlocks(rightDoc);
+        const idx = findBlockIndexFromSelection(iframeDoc, sel);
+        if (idx === null) return;
+        log("block match index", idx);
+        if (leftBlocks[idx]) {
+          highlightBlock(leftBlocks[idx], "rgba(255,200,120,0.5)");
+        }
+        if (rightBlocks[idx]) {
+          highlightBlock(rightBlocks[idx], "rgba(180,220,255,0.45)");
+          rightBlocks[idx].scrollIntoView({ block: "center" });
+        }
+      });
+    });
+    rightPane = document.createElement("div");
+    rightPane.id = "str-right-pane";
+    Object.assign(rightPane.style, {
+      width: `${100 - Math.round(SPLIT_LEFT_RATIO * 100)}%`,
+      height: "100%",
+      overflow: "auto",
+      background: "#fff"
+    });
+    const wrapper = document.createElement("div");
+    wrapper.id = "str-right-wrapper";
+    while (document.body.firstChild) {
+      wrapper.appendChild(document.body.firstChild);
+    }
+    rightPane.appendChild(wrapper);
+    splitRoot.appendChild(leftPane);
+    splitRoot.appendChild(rightPane);
+    document.body.appendChild(splitRoot);
+    log("\u2705 ensureSplitUI() DONE", {
+      leftPane: !!leftPane,
+      rightPane: !!rightPane,
+      leftIframe: !!leftIframe,
+      splitRootInDOM: document.body.contains(splitRoot)
+    });
+    setupScrollSync();
+    rightPane.addEventListener("mouseup", () => {
+      const sel = window.getSelection();
+      const text = sel?.toString().trim() ?? "";
+      if (text.length === 0) return;
+      const block = findBlockFromSelection(sel, rightPane);
+      if (!block) {
+        log("RIGHT pane selection but no block found");
+        return;
+      }
+      const index = getBlockIndex(block, rightPane);
+      log("RIGHT pane block detected", {
+        index,
+        tag: block.tagName,
+        preview: block.innerText.slice(0, 80)
+      });
+      const iframeDoc = leftIframe?.contentDocument;
+      if (iframeDoc) {
+        const target = getBlockByIndex(index, iframeDoc.body);
+        if (target) {
+          log("RIGHT \u2192 LEFT highlight", { index });
+          highlightBlock(target);
+        } else {
+          log("RIGHT \u2192 LEFT block not found", { index });
+        }
+      }
+    });
+  }
+  function teardownSplitUI() {
+    log("\u{1F9F9} teardownSplitUI() START", {
+      splitRoot: !!splitRoot,
+      leftPane: !!leftPane,
+      rightPane: !!rightPane
+    });
+    if (!splitRoot) {
+      log("\u26A0\uFE0F teardownSplitUI() - splitRoot not found, nothing to teardown");
+      return;
+    }
+    const wrapper = rightPane?.querySelector("#str-right-wrapper");
+    if (wrapper) {
+      log("\u{1F4E6} Restoring wrapper children to body", {
+        childCount: wrapper.children.length
+      });
+      while (wrapper.firstChild) {
+        document.body.appendChild(wrapper.firstChild);
+      }
+      log("\u2705 Wrapper children restored");
+    } else {
+      log("\u26A0\uFE0F Wrapper not found in rightPane");
+    }
+    splitRoot.remove();
+    log("\u{1F5D1}\uFE0F splitRoot removed from DOM");
+    splitRoot = null;
+    leftPane = null;
+    rightPane = null;
+    leftIframe = null;
+    log("\u2705 teardownSplitUI() DONE", {
+      splitRoot: !!splitRoot,
+      leftPane: !!leftPane,
+      rightPane: !!rightPane
+    });
+  }
+  function setupScrollSync() {
+    if (!rightPane || !leftIframe) {
+      log("setupScrollSync() missing refs", { rightPane: !!rightPane, leftIframe: !!leftIframe });
+      return;
+    }
+    log("setupScrollSync() attach");
+    leftIframe.addEventListener("load", () => {
+      log("leftIframe load");
+    });
+    rightPane.addEventListener("scroll", () => {
+      try {
+        const iframeDoc = leftIframe?.contentDocument;
+        const iframeWin = leftIframe?.contentWindow;
+        if (!iframeDoc || !iframeWin || !rightPane) return;
+        const rightMax = rightPane.scrollHeight - rightPane.clientHeight;
+        const leftMax = iframeDoc.documentElement.scrollHeight - iframeWin.innerHeight;
+        if (rightMax <= 0 || leftMax <= 0) return;
+        const ratio = rightPane.scrollTop / rightMax;
+        const target = ratio * leftMax;
+        iframeWin.scrollTo(0, target);
+        log("scrollSync", { ratio, rightTop: rightPane.scrollTop, leftTarget: target });
+      } catch (e) {
+        log("scrollSync error", e);
+      }
+    });
+  }
+  var activeHighlights = [];
+  function clearHighlights() {
+    activeHighlights.forEach((el) => el.remove());
+    activeHighlights = [];
+  }
+  function hookHistoryAPI() {
+    log("\u{1F527} hookHistoryAPI() called");
+    const originalPushState = history.pushState;
+    const originalReplaceState = history.replaceState;
+    history.pushState = function(...args) {
+      log("\u{1F500} history.pushState INTERCEPTED", {
+        url: location.href,
+        args,
+        enabled
+      });
+      originalPushState.apply(this, args);
+      log("\u{1F500} history.pushState AFTER apply", location.href);
+      onNavigationDetected();
+    };
+    history.replaceState = function(...args) {
+      log("\u{1F500} history.replaceState INTERCEPTED", {
+        url: location.href,
+        args,
+        enabled
+      });
+      originalReplaceState.apply(this, args);
+      log("\u{1F500} history.replaceState AFTER apply", location.href);
+      onNavigationDetected();
+    };
+    window.addEventListener("popstate", (e) => {
+      log("\u2B05\uFE0F popstate EVENT", {
+        url: location.href,
+        state: e.state,
+        enabled
+      });
+      onNavigationDetected();
+    });
+    log("\u2705 History API hooked successfully");
+  }
+  function startNavigationDetector() {
+    if (navigationDetector) {
+      log("\u26A0\uFE0F startNavigationDetector() already running");
+      return;
+    }
+    log("\u{1F680} startNavigationDetector() starting...");
+    log("\u{1F4CD} Initial URL:", currentURL);
+    navigationDetector = setInterval(() => {
+      if (location.href !== currentURL) {
+        log("\u{1F504} URL CHANGE detected (polling)", {
+          from: currentURL,
+          to: location.href,
+          enabled,
+          splitRoot: !!splitRoot
+        });
+        currentURL = location.href;
+        onNavigationDetected();
+      }
+    }, 500);
+    log("\u2705 Navigation detector started (polling every 500ms)");
+  }
+  function stopNavigationDetector() {
+    if (navigationDetector) {
+      clearInterval(navigationDetector);
+      navigationDetector = null;
+      log("\u{1F6D1} Navigation detector stopped");
+    } else {
+      log("\u26A0\uFE0F stopNavigationDetector() but detector was not running");
+    }
+  }
+  function onNavigationDetected() {
+    log("\u{1F3AF} onNavigationDetected() CALLED", {
+      url: location.href,
+      enabled,
+      splitRoot: !!splitRoot,
+      leftPane: !!leftPane,
+      rightPane: !!rightPane
+    });
+    if (!enabled) {
+      log("\u274C onNavigationDetected() - ABORTED: enabled=false");
+      return;
+    }
+    log("\u2705 onNavigationDetected() - proceeding (enabled=true)");
+    log("\u{1F9F9} Starting teardown...");
+    teardownSplitUI();
+    log("\u23F1\uFE0F Waiting 300ms for DOM stabilization...");
+    setTimeout(() => {
+      log("\u{1F504} Re-capturing snapshot for new page", {
+        url: location.href,
+        enabled,
+        bodyChildren: document.body.children.length
+      });
+      originalSnapshotBodyHTML = null;
+      originalSnapshotHeadHTML = null;
+      log("\u{1F4F8} Calling captureSnapshotOnce()...");
+      captureSnapshotOnce();
+      log("\u{1F3D7}\uFE0F Calling ensureSplitUI()...");
+      ensureSplitUI();
+      log("\u2705 Split view reconstruction complete", {
+        splitRoot: !!splitRoot,
+        leftPane: !!leftPane,
+        rightPane: !!rightPane,
+        leftIframe: !!leftIframe
+      });
+    }, 300);
   }
   chrome.runtime.onMessage.addListener((msg) => {
-    LOG("onMessage()", msg);
+    log("\u{1F4E8} onMessage received", msg);
     if (msg.type === "START") {
+      if (enabled) {
+        log("\u26A0\uFE0F START message but already enabled");
+        return;
+      }
+      log("\u{1F680} START message - enabling split view");
       enabled = true;
-      showOverlay();
-      checkChromeTranslateState();
+      saveEnabledState(true);
+      log("\u{1F4CD} Current URL:", location.href);
+      currentURL = location.href;
+      log("\u{1F527} Hooking History API...");
+      hookHistoryAPI();
+      log("\u{1F527} Starting Navigation Detector...");
+      startNavigationDetector();
+      log("\u{1F4F8} Capturing initial snapshot...");
+      captureSnapshotOnce();
+      log("\u{1F3D7}\uFE0F Creating split UI...");
+      ensureSplitUI();
+      log("\u2705 START complete", {
+        enabled,
+        splitRoot: !!splitRoot,
+        currentURL
+      });
     }
     if (msg.type === "STOP") {
+      log("\u{1F6D1} STOP message received");
+      if (!enabled) {
+        log("\u26A0\uFE0F STOP message but already disabled");
+        return;
+      }
       enabled = false;
-      hideOverlay();
+      saveEnabledState(false);
+      log("\u{1F527} enabled set to false");
+      log("\u{1F6D1} Stopping navigation detector...");
+      stopNavigationDetector();
+      log("\u{1F9F9} Tearing down split UI...");
+      teardownSplitUI();
+      log("\u2705 STOP complete", {
+        enabled,
+        splitRoot: !!splitRoot
+      });
     }
   });
-  new MutationObserver(() => {
-    if (!enabled) return;
-    LOG("MutationObserver triggered");
-    checkChromeTranslateState();
-  }).observe(document.documentElement, {
-    attributes: true,
-    attributeFilter: ["class"]
-  });
+  (async function initOnPageLoad() {
+    log("\u{1F30D} Page loaded", {
+      url: location.href,
+      readyState: document.readyState
+    });
+    const wasEnabled = await restoreEnabledState();
+    log("\u{1F50D} Checking previous state", {
+      wasEnabled,
+      currentEnabled: enabled
+    });
+    if (wasEnabled) {
+      log("\u{1F504} Previous session was enabled - auto-restarting split view");
+      enabled = true;
+      currentURL = location.href;
+      if (document.readyState === "loading") {
+        log("\u23F1\uFE0F Document still loading, waiting for DOMContentLoaded...");
+        document.addEventListener("DOMContentLoaded", () => {
+          log("\u2705 DOMContentLoaded fired");
+          restartSplitView();
+        });
+      } else {
+        log("\u2705 Document already loaded");
+        restartSplitView();
+      }
+    } else {
+      log("\u2139\uFE0F Previous session was disabled - waiting for START message");
+    }
+  })();
+  function restartSplitView() {
+    log("\u{1F504} Restarting split view after page load");
+    hookHistoryAPI();
+    startNavigationDetector();
+    setTimeout(() => {
+      log("\u{1F4F8} Capturing snapshot for restarted session");
+      captureSnapshotOnce();
+      log("\u{1F3D7}\uFE0F Creating split UI for restarted session");
+      ensureSplitUI();
+      log("\u2705 Split view restarted successfully");
+    }, 100);
+  }
 })();
 //# sourceMappingURL=content.js.map

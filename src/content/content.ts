@@ -16,6 +16,12 @@ let originalSnapshotHeadHTML: string | null = null;
 const SPLIT_LEFT_RATIO = 0.5; // 좌/우 50:50
 
 // =====================
+// Strategy 3: Navigation tracking
+// =====================
+let currentURL = location.href;
+let navigationDetector: NodeJS.Timeout | null = null;
+
+// =====================
 // LOG (삭제 금지)
 // =====================
 function log(...args: any[]) {
@@ -407,8 +413,9 @@ function teardownSplitUI() {
   rightPane = null;
   leftIframe = null;
 
-  originalSnapshotBodyHTML = null;
-  originalSnapshotHeadHTML = null;
+  // Strategy 3: 스냅샷은 유지 (다음 재구성에 재사용 가능)
+  // originalSnapshotBodyHTML = null;
+  // originalSnapshotHeadHTML = null;
 
   log("teardownSplitUI() done");
 }
@@ -484,6 +491,89 @@ function clearHighlights() {
 
 
 // =====================
+// Strategy 3: Navigation Detection
+// =====================
+
+/**
+ * History API 후킹: SPA 라우팅 감지
+ */
+function hookHistoryAPI() {
+  const originalPushState = history.pushState;
+  const originalReplaceState = history.replaceState;
+
+  history.pushState = function(...args) {
+    originalPushState.apply(this, args);
+    log("history.pushState detected", location.href);
+    onNavigationDetected();
+  };
+
+  history.replaceState = function(...args) {
+    originalReplaceState.apply(this, args);
+    log("history.replaceState detected", location.href);
+    onNavigationDetected();
+  };
+
+  // popstate: 브라우저 뒤로/앞으로
+  window.addEventListener("popstate", () => {
+    log("popstate detected", location.href);
+    onNavigationDetected();
+  });
+
+  log("History API hooked");
+}
+
+/**
+ * URL 변경 폴링 (SPA fallback)
+ */
+function startNavigationDetector() {
+  if (navigationDetector) return;
+
+  navigationDetector = setInterval(() => {
+    if (location.href !== currentURL) {
+      log("URL change detected (polling)", { from: currentURL, to: location.href });
+      currentURL = location.href;
+      onNavigationDetected();
+    }
+  }, 500);
+
+  log("Navigation detector started");
+}
+
+function stopNavigationDetector() {
+  if (navigationDetector) {
+    clearInterval(navigationDetector);
+    navigationDetector = null;
+    log("Navigation detector stopped");
+  }
+}
+
+/**
+ * Navigation 감지 시 호출
+ */
+function onNavigationDetected() {
+  if (!enabled) return;
+
+  log("onNavigationDetected() - page changed", location.href);
+
+  // 기존 split 정리
+  teardownSplitUI();
+
+  // 새 페이지 스냅샷 캡처 대기 (DOM이 안정화될 때까지)
+  setTimeout(() => {
+    log("Re-capturing snapshot for new page");
+    
+    // 스냅샷 초기화 후 재캡처
+    originalSnapshotBodyHTML = null;
+    originalSnapshotHeadHTML = null;
+    
+    captureSnapshotOnce();
+    ensureSplitUI();
+
+    log("Split view reconstructed for new page");
+  }, 300); // DOM 안정화 대기
+}
+
+// =====================
 // Chrome 메시지
 // =====================
 chrome.runtime.onMessage.addListener((msg: Msg) => {
@@ -494,6 +584,10 @@ chrome.runtime.onMessage.addListener((msg: Msg) => {
 
     enabled = true;
 
+    // Navigation 감지 시작
+    hookHistoryAPI();
+    startNavigationDetector();
+
     captureSnapshotOnce();
     ensureSplitUI();
 
@@ -502,6 +596,10 @@ chrome.runtime.onMessage.addListener((msg: Msg) => {
 
   if (msg.type === "STOP") {
     enabled = false;
+    
+    // Navigation 감지 중지
+    stopNavigationDetector();
+    
     teardownSplitUI();
     log("STOP done");
   }

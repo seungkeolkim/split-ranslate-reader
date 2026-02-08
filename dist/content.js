@@ -9,6 +9,8 @@
   var originalSnapshotBodyHTML = null;
   var originalSnapshotHeadHTML = null;
   var SPLIT_LEFT_RATIO = 0.5;
+  var currentURL = location.href;
+  var navigationDetector = null;
   function log(...args) {
     console.log("[STR-DBG]", ...args);
   }
@@ -261,8 +263,6 @@ ${bodyHTML}
     leftPane = null;
     rightPane = null;
     leftIframe = null;
-    originalSnapshotBodyHTML = null;
-    originalSnapshotHeadHTML = null;
     log("teardownSplitUI() done");
   }
   function setupScrollSync() {
@@ -296,17 +296,70 @@ ${bodyHTML}
     activeHighlights.forEach((el) => el.remove());
     activeHighlights = [];
   }
+  function hookHistoryAPI() {
+    const originalPushState = history.pushState;
+    const originalReplaceState = history.replaceState;
+    history.pushState = function(...args) {
+      originalPushState.apply(this, args);
+      log("history.pushState detected", location.href);
+      onNavigationDetected();
+    };
+    history.replaceState = function(...args) {
+      originalReplaceState.apply(this, args);
+      log("history.replaceState detected", location.href);
+      onNavigationDetected();
+    };
+    window.addEventListener("popstate", () => {
+      log("popstate detected", location.href);
+      onNavigationDetected();
+    });
+    log("History API hooked");
+  }
+  function startNavigationDetector() {
+    if (navigationDetector) return;
+    navigationDetector = setInterval(() => {
+      if (location.href !== currentURL) {
+        log("URL change detected (polling)", { from: currentURL, to: location.href });
+        currentURL = location.href;
+        onNavigationDetected();
+      }
+    }, 500);
+    log("Navigation detector started");
+  }
+  function stopNavigationDetector() {
+    if (navigationDetector) {
+      clearInterval(navigationDetector);
+      navigationDetector = null;
+      log("Navigation detector stopped");
+    }
+  }
+  function onNavigationDetected() {
+    if (!enabled) return;
+    log("onNavigationDetected() - page changed", location.href);
+    teardownSplitUI();
+    setTimeout(() => {
+      log("Re-capturing snapshot for new page");
+      originalSnapshotBodyHTML = null;
+      originalSnapshotHeadHTML = null;
+      captureSnapshotOnce();
+      ensureSplitUI();
+      log("Split view reconstructed for new page");
+    }, 300);
+  }
   chrome.runtime.onMessage.addListener((msg) => {
     log("onMessage", msg);
     if (msg.type === "START") {
       if (enabled) return;
       enabled = true;
+      hookHistoryAPI();
+      startNavigationDetector();
       captureSnapshotOnce();
       ensureSplitUI();
       log("START done");
     }
     if (msg.type === "STOP") {
       enabled = false;
+      stopNavigationDetector();
       teardownSplitUI();
       log("STOP done");
     }

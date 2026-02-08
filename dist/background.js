@@ -8,13 +8,17 @@
       }
     });
   });
-  var logBuffer = [];
-  var MAX_LOGS = 1e3;
-  chrome.runtime.onMessage.addListener((msg, sender) => {
+  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    if (msg.type === "GET_TAB_ID") {
+      const tabId = sender.tab?.id ?? null;
+      console.log(`[STR-BG] GET_TAB_ID request from tab ${tabId}`);
+      sendResponse({ tabId });
+      return true;
+    }
     if (msg.type === "LOG") {
       const logEntry = {
         timestamp: msg.timestamp,
-        tabId: sender.tab?.id,
+        tabId: msg.tabId ?? sender.tab?.id,
         url: sender.tab?.url,
         data: msg.data
       };
@@ -22,9 +26,11 @@
       if (logBuffer.length > MAX_LOGS) {
         logBuffer.shift();
       }
-      console.log(`[STR-BG] [Tab ${sender.tab?.id}]`, ...msg.data);
+      console.log(`[STR-BG] [Tab ${logEntry.tabId}]`, ...msg.data);
     }
   });
+  var logBuffer = [];
+  var MAX_LOGS = 1e3;
   globalThis.exportSTRLogs = () => {
     console.log("=== STR Background Logs ===");
     logBuffer.forEach((entry) => {

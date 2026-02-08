@@ -22,9 +22,14 @@ let currentURL = location.href;
 let navigationDetector: NodeJS.Timeout | null = null;
 
 // =====================
-// Storage Key
+// Tab-specific State Management
 // =====================
-const STORAGE_KEY = "str_enabled_state";
+let currentTabId: number | null = null;
+
+// Storage key는 탭별로 구분
+function getStorageKey(): string {
+  return `str_enabled_tab_${currentTabId}`;
+}
 
 // =====================
 // LOG (삭제 금지)
@@ -33,8 +38,8 @@ const logHistory: string[] = [];
 
 function log(...args: any[]) {
   const timestamp = new Date().toISOString().split('T')[1].slice(0, -1);
-  const message = `[${timestamp}] [STR-DBG] ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ')}`;
-  console.log("[STR-DBG]", ...args);
+  const message = `[${timestamp}] [Tab ${currentTabId}] [STR-DBG] ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ')}`;
+  console.log(`[STR-DBG] [Tab ${currentTabId}]`, ...args);
   
   // 로그 히스토리에 저장 (최대 500개)
   logHistory.push(message);
@@ -47,6 +52,7 @@ function log(...args: any[]) {
     chrome.runtime.sendMessage({
       type: "LOG",
       timestamp: timestamp,
+      tabId: currentTabId,
       data: args
     }).catch(() => {
       // Background가 없으면 무시
@@ -64,16 +70,22 @@ function log(...args: any[]) {
 };
 
 // =====================
-// State Management (페이지 이동 시에도 상태 유지)
+// State Management (탭별로 상태 유지)
 // =====================
 
 /**
- * 현재 enabled 상태를 storage에 저장
+ * 현재 탭의 enabled 상태를 storage에 저장
  */
 async function saveEnabledState(value: boolean) {
-  log("💾 Saving enabled state to storage:", value);
+  if (currentTabId === null) {
+    log("⚠️ Cannot save state: tabId not initialized");
+    return;
+  }
+  
+  const key = getStorageKey();
+  log("💾 Saving enabled state to storage:", { key, value });
   try {
-    await chrome.storage.local.set({ [STORAGE_KEY]: value });
+    await chrome.storage.local.set({ [key]: value });
     log("✅ State saved successfully");
   } catch (e) {
     log("❌ Failed to save state:", e);
@@ -81,18 +93,39 @@ async function saveEnabledState(value: boolean) {
 }
 
 /**
- * Storage에서 enabled 상태를 복원
+ * 현재 탭의 enabled 상태를 storage에서 복원
  */
 async function restoreEnabledState(): Promise<boolean> {
-  log("📂 Restoring enabled state from storage...");
+  if (currentTabId === null) {
+    log("⚠️ Cannot restore state: tabId not initialized");
+    return false;
+  }
+  
+  const key = getStorageKey();
+  log("📂 Restoring enabled state from storage...", { key });
   try {
-    const result = await chrome.storage.local.get(STORAGE_KEY);
-    const savedState = result[STORAGE_KEY] ?? false;
+    const result = await chrome.storage.local.get(key);
+    const savedState = result[key] ?? false;
     log("✅ State restored:", savedState);
     return savedState;
   } catch (e) {
     log("❌ Failed to restore state:", e);
     return false;
+  }
+}
+
+/**
+ * 현재 탭 ID를 가져오기
+ */
+async function getCurrentTabId(): Promise<number | null> {
+  try {
+    // chrome.tabs.getCurrent()는 content script에서 사용 불가
+    // 대신 background에 요청하거나 다른 방법 사용
+    const response = await chrome.runtime.sendMessage({ type: "GET_TAB_ID" });
+    return response?.tabId ?? null;
+  } catch (e) {
+    log("❌ Failed to get tab ID:", e);
+    return null;
   }
 }
 
@@ -788,12 +821,23 @@ chrome.runtime.onMessage.addListener((msg: Msg) => {
 });
 
 // =====================
-// Page Load: 상태 복원 및 자동 재시작
+// Page Load: 탭 ID 초기화 및 상태 복원
 // =====================
 (async function initOnPageLoad() {
+  // 먼저 탭 ID 가져오기
+  log("🔍 Getting current tab ID...");
+  currentTabId = await getCurrentTabId();
+  
+  if (currentTabId === null) {
+    log("❌ Failed to get tab ID - split view will not work");
+    return;
+  }
+  
+  log("✅ Tab ID initialized", { tabId: currentTabId });
   log("🌍 Page loaded", {
     url: location.href,
-    readyState: document.readyState
+    readyState: document.readyState,
+    tabId: currentTabId
   });
 
   // Storage에서 이전 상태 복원

@@ -11,12 +11,15 @@
   var SPLIT_LEFT_RATIO = 0.5;
   var currentURL = location.href;
   var navigationDetector = null;
-  var STORAGE_KEY = "str_enabled_state";
+  var currentTabId = null;
+  function getStorageKey() {
+    return `str_enabled_tab_${currentTabId}`;
+  }
   var logHistory = [];
   function log(...args) {
     const timestamp = (/* @__PURE__ */ new Date()).toISOString().split("T")[1].slice(0, -1);
-    const message = `[${timestamp}] [STR-DBG] ${args.map((a) => typeof a === "object" ? JSON.stringify(a) : a).join(" ")}`;
-    console.log("[STR-DBG]", ...args);
+    const message = `[${timestamp}] [Tab ${currentTabId}] [STR-DBG] ${args.map((a) => typeof a === "object" ? JSON.stringify(a) : a).join(" ")}`;
+    console.log(`[STR-DBG] [Tab ${currentTabId}]`, ...args);
     logHistory.push(message);
     if (logHistory.length > 500) {
       logHistory.shift();
@@ -25,6 +28,7 @@
       chrome.runtime.sendMessage({
         type: "LOG",
         timestamp,
+        tabId: currentTabId,
         data: args
       }).catch(() => {
       });
@@ -37,24 +41,43 @@
     console.log("======================");
   };
   async function saveEnabledState(value) {
-    log("\u{1F4BE} Saving enabled state to storage:", value);
+    if (currentTabId === null) {
+      log("\u26A0\uFE0F Cannot save state: tabId not initialized");
+      return;
+    }
+    const key = getStorageKey();
+    log("\u{1F4BE} Saving enabled state to storage:", { key, value });
     try {
-      await chrome.storage.local.set({ [STORAGE_KEY]: value });
+      await chrome.storage.local.set({ [key]: value });
       log("\u2705 State saved successfully");
     } catch (e) {
       log("\u274C Failed to save state:", e);
     }
   }
   async function restoreEnabledState() {
-    log("\u{1F4C2} Restoring enabled state from storage...");
+    if (currentTabId === null) {
+      log("\u26A0\uFE0F Cannot restore state: tabId not initialized");
+      return false;
+    }
+    const key = getStorageKey();
+    log("\u{1F4C2} Restoring enabled state from storage...", { key });
     try {
-      const result = await chrome.storage.local.get(STORAGE_KEY);
-      const savedState = result[STORAGE_KEY] ?? false;
+      const result = await chrome.storage.local.get(key);
+      const savedState = result[key] ?? false;
       log("\u2705 State restored:", savedState);
       return savedState;
     } catch (e) {
       log("\u274C Failed to restore state:", e);
       return false;
+    }
+  }
+  async function getCurrentTabId() {
+    try {
+      const response = await chrome.runtime.sendMessage({ type: "GET_TAB_ID" });
+      return response?.tabId ?? null;
+    } catch (e) {
+      log("\u274C Failed to get tab ID:", e);
+      return null;
     }
   }
   var BLOCK_SELECTOR = "p, li, h1, h2, h3, h4, h5, h6";
@@ -511,9 +534,17 @@ ${bodyHTML}
     }
   });
   (async function initOnPageLoad() {
+    log("\u{1F50D} Getting current tab ID...");
+    currentTabId = await getCurrentTabId();
+    if (currentTabId === null) {
+      log("\u274C Failed to get tab ID - split view will not work");
+      return;
+    }
+    log("\u2705 Tab ID initialized", { tabId: currentTabId });
     log("\u{1F30D} Page loaded", {
       url: location.href,
-      readyState: document.readyState
+      readyState: document.readyState,
+      tabId: currentTabId
     });
     const wasEnabled = await restoreEnabledState();
     log("\u{1F50D} Checking previous state", {

@@ -8,50 +8,28 @@
       }
     });
   });
-  function createIconImageData(size, color) {
-    const canvas = new OffscreenCanvas(size, size);
-    const ctx = canvas.getContext("2d");
-    if (!ctx) {
-      throw new Error("Could not get canvas context");
-    }
-    ctx.clearRect(0, 0, size, size);
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "#FFFFFF";
-    ctx.font = `bold ${size * 0.6}px Arial`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText("S", size / 2, size / 2);
-    return ctx.getImageData(0, 0, size, size);
-  }
   function updateTabIcon(tabId, enabled) {
     if (enabled) {
-      const icon16 = createIconImageData(16, "#35a324");
-      const icon32 = createIconImageData(32, "#35a324");
-      const icon48 = createIconImageData(48, "#35a324");
       chrome.action.setIcon({
         tabId,
-        imageData: {
-          "16": icon16,
-          "32": icon32,
-          "48": icon48
+        path: {
+          "16": "icons/icon-active-16.png",
+          "32": "icons/icon-active-32.png",
+          "48": "icons/icon-active-48.png",
+          "128": "icons/icon-active-128.png"
         }
       }).catch((err) => {
         console.error("[STR-BG] Failed to set active icon:", err);
       });
       console.log(`[STR-BG] Icon set to GREEN for tab ${tabId}`);
     } else {
-      const icon16 = createIconImageData(16, "#6C757D");
-      const icon32 = createIconImageData(32, "#6C757D");
-      const icon48 = createIconImageData(48, "#6C757D");
       chrome.action.setIcon({
         tabId,
-        imageData: {
-          "16": icon16,
-          "32": icon32,
-          "48": icon48
+        path: {
+          "16": "icons/icon-inactive-16.png",
+          "32": "icons/icon-inactive-32.png",
+          "48": "icons/icon-inactive-48.png",
+          "128": "icons/icon-inactive-128.png"
         }
       }).catch((err) => {
         console.error("[STR-BG] Failed to set inactive icon:", err);

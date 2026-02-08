@@ -7,55 +7,22 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 
 // =====================
-// Icon Generation
+// Icon Management (정적 이미지 사용)
 // =====================
 
 /**
- * Canvas를 사용해 동적으로 아이콘 생성
- */
-function createIconImageData(size: number, color: string): ImageData {
-  const canvas = new OffscreenCanvas(size, size);
-  const ctx = canvas.getContext('2d');
-  
-  if (!ctx) {
-    throw new Error('Could not get canvas context');
-  }
-  
-  // 배경을 투명하게
-  ctx.clearRect(0, 0, size, size);
-  
-  // 원형 배경
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
-  ctx.fill();
-  
-  // 'S' 글자
-  ctx.fillStyle = '#FFFFFF';
-  ctx.font = `bold ${size * 0.6}px Arial`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('S', size / 2, size / 2);
-  
-  return ctx.getImageData(0, 0, size, size);
-}
-
-/**
- * 탭별 아이콘 상태 업데이트
+ * 탭별 아이콘 상태 업데이트 (정적 PNG 이미지 사용)
  */
 function updateTabIcon(tabId: number, enabled: boolean) {
   if (enabled) {
-    // Active: 녹색 아이콘 (#35a324)
-    const icon16 = createIconImageData(16, '#35a324');
-    const icon32 = createIconImageData(32, '#35a324');
-    const icon48 = createIconImageData(48, '#35a324');
-    
+    // Active: 녹색 아이콘
     chrome.action.setIcon({
       tabId: tabId,
-      imageData: {
-        '16': icon16,
-        '32': icon32,
-        '48': icon48
+      path: {
+        '16': 'icons/icon-active-16.png',
+        '32': 'icons/icon-active-32.png',
+        '48': 'icons/icon-active-48.png',
+        '128': 'icons/icon-active-128.png'
       }
     }).catch(err => {
       console.error('[STR-BG] Failed to set active icon:', err);
@@ -63,17 +30,14 @@ function updateTabIcon(tabId: number, enabled: boolean) {
     
     console.log(`[STR-BG] Icon set to GREEN for tab ${tabId}`);
   } else {
-    // Inactive: 회색 아이콘 (기본 상태)
-    const icon16 = createIconImageData(16, '#6C757D');
-    const icon32 = createIconImageData(32, '#6C757D');
-    const icon48 = createIconImageData(48, '#6C757D');
-    
+    // Inactive: 회색 아이콘
     chrome.action.setIcon({
       tabId: tabId,
-      imageData: {
-        '16': icon16,
-        '32': icon32,
-        '48': icon48
+      path: {
+        '16': 'icons/icon-inactive-16.png',
+        '32': 'icons/icon-inactive-32.png',
+        '48': 'icons/icon-inactive-48.png',
+        '128': 'icons/icon-inactive-128.png'
       }
     }).catch(err => {
       console.error('[STR-BG] Failed to set inactive icon:', err);

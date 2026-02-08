@@ -161,10 +161,47 @@ async function getCurrentTabId(): Promise<number | null> {
 // Paragraph / Block Utils
 // =====================
 
-const BLOCK_SELECTOR = "p, li, h1, h2, h3, h4, h5, h6";
+// 확장된 블록 셀렉터: 텍스트를 포함할 수 있는 모든 요소
+const BLOCK_SELECTOR = [
+  // 기본 텍스트 블록
+  "p", "li", "h1", "h2", "h3", "h4", "h5", "h6",
+  // 테이블 관련
+  "td", "th", "caption",
+  // 코드 블록
+  "pre", "code",
+  // 인용
+  "blockquote", "q",
+  // 정의 리스트
+  "dd", "dt",
+  // 기타 텍스트 컨테이너
+  "figcaption", "summary", "label",
+  // div, span은 텍스트가 직접 있는 경우만
+  "div", "span", "a",
+  // 기사/섹션
+  "article", "section", "aside", "nav", "header", "footer"
+].join(", ");
 
 /**
- * selection이 속한 가장 가까운 block element 찾기
+ * 텍스트 노드가 있는 실제 블록 요소인지 확인
+ */
+function isValidTextBlock(element: HTMLElement): boolean {
+  // innerText가 충분히 긴지 확인 (최소 20자 - collectBlocks와 일관성)
+  const text = element.innerText?.trim();
+  if (!text || text.length < 20) return false;
+  
+  // 화면에 보이는지 확인
+  const rect = element.getBoundingClientRect();
+  if (rect.width === 0 || rect.height === 0) return false;
+  
+  // 너무 큰 컨테이너는 제외 (전체 페이지 wrapper 등)
+  // 대신 자식 요소를 찾도록
+  if (rect.height > 10000) return false;
+  
+  return true;
+}
+
+/**
+ * selection이 속한 가장 가까운 block element 찾기 (개선됨)
  */
 function findBlockFromSelection(
   sel: Selection,
@@ -174,10 +211,21 @@ function findBlockFromSelection(
 
   let node: Node | null = sel.getRangeAt(0).startContainer;
 
-  while (node) {
+  // 텍스트 노드에서 시작하면 부모부터 탐색
+  if (node.nodeType === Node.TEXT_NODE) {
+    node = node.parentElement;
+  }
+
+  // 부모로 올라가면서 적합한 블록 찾기
+  while (node && node !== root) {
     if (node instanceof HTMLElement) {
+      // BLOCK_SELECTOR에 매치되고 유효한 텍스트 블록이면 반환
       if (node.matches(BLOCK_SELECTOR) && root.contains(node)) {
-        return node;
+        // 너무 큰 컨테이너면 계속 탐색
+        const rect = node.getBoundingClientRect();
+        if (rect.height < 10000) {
+          return node;
+        }
       }
     }
     node = node.parentNode;

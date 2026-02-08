@@ -100,14 +100,58 @@
       return null;
     }
   }
-  var BLOCK_SELECTOR = "p, li, h1, h2, h3, h4, h5, h6";
+  var BLOCK_SELECTOR = [
+    // 기본 텍스트 블록
+    "p",
+    "li",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    // 테이블 관련
+    "td",
+    "th",
+    "caption",
+    // 코드 블록
+    "pre",
+    "code",
+    // 인용
+    "blockquote",
+    "q",
+    // 정의 리스트
+    "dd",
+    "dt",
+    // 기타 텍스트 컨테이너
+    "figcaption",
+    "summary",
+    "label",
+    // div, span은 텍스트가 직접 있는 경우만
+    "div",
+    "span",
+    "a",
+    // 기사/섹션
+    "article",
+    "section",
+    "aside",
+    "nav",
+    "header",
+    "footer"
+  ].join(", ");
   function findBlockFromSelection(sel, root) {
     if (sel.rangeCount === 0) return null;
     let node = sel.getRangeAt(0).startContainer;
-    while (node) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      node = node.parentElement;
+    }
+    while (node && node !== root) {
       if (node instanceof HTMLElement) {
         if (node.matches(BLOCK_SELECTOR) && root.contains(node)) {
-          return node;
+          const rect = node.getBoundingClientRect();
+          if (rect.height < 1e4) {
+            return node;
+          }
         }
       }
       node = node.parentNode;

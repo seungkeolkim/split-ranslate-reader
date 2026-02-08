@@ -33,6 +33,9 @@ async function checkCurrentTabState() {
     const enabled = result[key] ?? false;
     currentEnabled = enabled;
     updateUI(enabled);
+    
+    // 아이콘도 현재 상태로 업데이트
+    updateIcon(tab.id, enabled);
   });
 }
 

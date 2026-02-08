@@ -24,6 +24,7 @@
       const enabled = result[key] ?? false;
       currentEnabled = enabled;
       updateUI(enabled);
+      updateIcon(tab.id, enabled);
     });
   }
   function updateUI(enabled) {

@@ -7,6 +7,83 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 
 // =====================
+// Icon Generation
+// =====================
+
+/**
+ * Canvas를 사용해 동적으로 아이콘 생성
+ */
+function createIconImageData(size: number, color: string): ImageData {
+  const canvas = new OffscreenCanvas(size, size);
+  const ctx = canvas.getContext('2d');
+  
+  if (!ctx) {
+    throw new Error('Could not get canvas context');
+  }
+  
+  // 배경을 투명하게
+  ctx.clearRect(0, 0, size, size);
+  
+  // 원형 배경
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // 'S' 글자
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = `bold ${size * 0.6}px Arial`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('S', size / 2, size / 2);
+  
+  return ctx.getImageData(0, 0, size, size);
+}
+
+/**
+ * 탭별 아이콘 상태 업데이트
+ */
+function updateTabIcon(tabId: number, enabled: boolean) {
+  if (enabled) {
+    // Active: 녹색 아이콘 (#75FA61)
+    const icon16 = createIconImageData(16, '#75FA61');
+    const icon32 = createIconImageData(32, '#75FA61');
+    const icon48 = createIconImageData(48, '#75FA61');
+    
+    chrome.action.setIcon({
+      tabId: tabId,
+      imageData: {
+        '16': icon16,
+        '32': icon32,
+        '48': icon48
+      }
+    }).catch(err => {
+      console.error('[STR-BG] Failed to set active icon:', err);
+    });
+    
+    console.log(`[STR-BG] Icon set to GREEN for tab ${tabId}`);
+  } else {
+    // Inactive: 회색 아이콘 (기본 상태)
+    const icon16 = createIconImageData(16, '#6C757D');
+    const icon32 = createIconImageData(32, '#6C757D');
+    const icon48 = createIconImageData(48, '#6C757D');
+    
+    chrome.action.setIcon({
+      tabId: tabId,
+      imageData: {
+        '16': icon16,
+        '32': icon32,
+        '48': icon48
+      }
+    }).catch(err => {
+      console.error('[STR-BG] Failed to set inactive icon:', err);
+    });
+    
+    console.log(`[STR-BG] Icon set to GRAY for tab ${tabId}`);
+  }
+}
+
+// =====================
 // Tab ID 제공 & 아이콘 업데이트
 // =====================
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -25,7 +102,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     
     if (tabId) {
       updateTabIcon(tabId, enabled);
-      console.log(`[STR-BG] Icon updated for tab ${tabId}: ${enabled ? 'active' : 'inactive'}`);
+      console.log(`[STR-BG] Icon updated for tab ${tabId}: ${enabled ? 'ACTIVE (green)' : 'INACTIVE (gray)'}`);
     }
   }
   
@@ -49,29 +126,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     console.log(`[STR-BG] [Tab ${logEntry.tabId}]`, ...msg.data);
   }
 });
-
-/**
- * 탭별 아이콘 상태 업데이트
- */
-function updateTabIcon(tabId: number, enabled: boolean) {
-  if (enabled) {
-    // Active: 파란색 배지
-    chrome.action.setBadgeBackgroundColor({ 
-      tabId: tabId,
-      color: '#007bff' 
-    });
-    chrome.action.setBadgeText({ 
-      tabId: tabId,
-      text: '●' 
-    });
-  } else {
-    // Inactive: 배지 제거
-    chrome.action.setBadgeText({ 
-      tabId: tabId,
-      text: '' 
-    });
-  }
-}
 
 // 탭이 닫힐 때 아이콘 정리
 chrome.tabs.onRemoved.addListener((tabId) => {

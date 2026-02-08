@@ -55,21 +55,11 @@
     updateIcon(currentTabId, newState);
   }
   function updateIcon(tabId, enabled) {
-    if (enabled) {
-      chrome.action.setBadgeBackgroundColor({
-        tabId,
-        color: "#007bff"
-      });
-      chrome.action.setBadgeText({
-        tabId,
-        text: "\u25CF"
-      });
-    } else {
-      chrome.action.setBadgeText({
-        tabId,
-        text: ""
-      });
-    }
+    chrome.runtime.sendMessage({
+      type: "UPDATE_ICON",
+      tabId,
+      enabled
+    });
   }
   btnToggle.addEventListener("click", toggleSplitView);
   checkCurrentTabState();

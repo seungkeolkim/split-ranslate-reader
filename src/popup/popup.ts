@@ -77,24 +77,12 @@ async function toggleSplitView() {
 
 // Icon 상태 업데이트
 function updateIcon(tabId: number, enabled: boolean) {
-  // Badge로 상태 표시 (간단하고 효과적)
-  if (enabled) {
-    // Active: 파란색 배지
-    chrome.action.setBadgeBackgroundColor({ 
-      tabId: tabId,
-      color: '#007bff' 
-    });
-    chrome.action.setBadgeText({ 
-      tabId: tabId,
-      text: '●' 
-    });
-  } else {
-    // Inactive: 배지 제거
-    chrome.action.setBadgeText({ 
-      tabId: tabId,
-      text: '' 
-    });
-  }
+  // Background에 아이콘 업데이트 요청
+  chrome.runtime.sendMessage({
+    type: "UPDATE_ICON",
+    tabId: tabId,
+    enabled: enabled
+  });
 }
 
 btnToggle.addEventListener("click", toggleSplitView);

@@ -874,6 +874,9 @@ chrome.runtime.onMessage.addListener((msg: Msg) => {
     
     enabled = true;
     currentURL = location.href;
+    
+    // 아이콘 상태 복원
+    updateIconState(true);
 
     // DOM이 준비될 때까지 대기
     if (document.readyState === 'loading') {
@@ -888,6 +891,8 @@ chrome.runtime.onMessage.addListener((msg: Msg) => {
     }
   } else {
     log("ℹ️ Previous session was disabled - waiting for START message");
+    // 아이콘을 inactive 상태로 설정
+    updateIconState(false);
   }
 })();
 

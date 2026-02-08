@@ -569,6 +569,7 @@ ${bodyHTML}
       log("\u{1F504} Previous session was enabled - auto-restarting split view");
       enabled = true;
       currentURL = location.href;
+      updateIconState(true);
       if (document.readyState === "loading") {
         log("\u23F1\uFE0F Document still loading, waiting for DOMContentLoaded...");
         document.addEventListener("DOMContentLoaded", () => {
@@ -581,6 +582,7 @@ ${bodyHTML}
       }
     } else {
       log("\u2139\uFE0F Previous session was disabled - waiting for START message");
+      updateIconState(false);
     }
   })();
   function restartSplitView() {

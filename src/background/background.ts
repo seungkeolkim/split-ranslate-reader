@@ -45,10 +45,10 @@ function createIconImageData(size: number, color: string): ImageData {
  */
 function updateTabIcon(tabId: number, enabled: boolean) {
   if (enabled) {
-    // Active: 녹색 아이콘 (#75FA61)
-    const icon16 = createIconImageData(16, '#75FA61');
-    const icon32 = createIconImageData(32, '#75FA61');
-    const icon48 = createIconImageData(48, '#75FA61');
+    // Active: 녹색 아이콘 (#35a324)
+    const icon16 = createIconImageData(16, '#35a324');
+    const icon32 = createIconImageData(32, '#35a324');
+    const icon48 = createIconImageData(48, '#35a324');
     
     chrome.action.setIcon({
       tabId: tabId,

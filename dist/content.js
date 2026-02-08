@@ -50,8 +50,22 @@
     try {
       await chrome.storage.local.set({ [key]: value });
       log("\u2705 State saved successfully");
+      updateIconState(value);
     } catch (e) {
       log("\u274C Failed to save state:", e);
+    }
+  }
+  function updateIconState(enabled2) {
+    if (currentTabId === null) return;
+    try {
+      chrome.runtime.sendMessage({
+        type: "UPDATE_ICON",
+        tabId: currentTabId,
+        enabled: enabled2
+      });
+      log("\u{1F3A8} Icon update requested", { enabled: enabled2 });
+    } catch (e) {
+      log("\u26A0\uFE0F Failed to request icon update:", e);
     }
   }
   async function restoreEnabledState() {

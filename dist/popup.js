@@ -55,21 +55,21 @@
     updateIcon(currentTabId, newState);
   }
   function updateIcon(tabId, enabled) {
-    const iconPath = enabled ? {
-      "16": "icon-active-16.png",
-      "48": "icon-active-48.png",
-      "128": "icon-active-128.png"
-    } : {
-      "16": "icon-inactive-16.png",
-      "48": "icon-inactive-48.png",
-      "128": "icon-inactive-128.png"
-    };
-    chrome.action.setIcon({
-      tabId,
-      path: iconPath
-    }).catch(() => {
-      console.log("Icon files not available, skipping icon update");
-    });
+    if (enabled) {
+      chrome.action.setBadgeBackgroundColor({
+        tabId,
+        color: "#007bff"
+      });
+      chrome.action.setBadgeText({
+        tabId,
+        text: "\u25CF"
+      });
+    } else {
+      chrome.action.setBadgeText({
+        tabId,
+        text: ""
+      });
+    }
   }
   btnToggle.addEventListener("click", toggleSplitView);
   checkCurrentTabState();

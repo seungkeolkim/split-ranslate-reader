@@ -87,8 +87,29 @@ async function saveEnabledState(value: boolean) {
   try {
     await chrome.storage.local.set({ [key]: value });
     log("✅ State saved successfully");
+    
+    // 아이콘 상태 업데이트
+    updateIconState(value);
   } catch (e) {
     log("❌ Failed to save state:", e);
+  }
+}
+
+/**
+ * 아이콘 상태 업데이트 (background에 요청)
+ */
+function updateIconState(enabled: boolean) {
+  if (currentTabId === null) return;
+  
+  try {
+    chrome.runtime.sendMessage({
+      type: "UPDATE_ICON",
+      tabId: currentTabId,
+      enabled: enabled
+    });
+    log("🎨 Icon update requested", { enabled });
+  } catch (e) {
+    log("⚠️ Failed to request icon update:", e);
   }
 }
 

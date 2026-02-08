@@ -77,26 +77,24 @@ async function toggleSplitView() {
 
 // Icon 상태 업데이트
 function updateIcon(tabId: number, enabled: boolean) {
-  const iconPath = enabled 
-    ? {
-        "16": "icon-active-16.png",
-        "48": "icon-active-48.png",
-        "128": "icon-active-128.png"
-      }
-    : {
-        "16": "icon-inactive-16.png",
-        "48": "icon-inactive-48.png",
-        "128": "icon-inactive-128.png"
-      };
-  
-  // Icon 변경 시도 (아이콘 파일이 있으면 작동)
-  chrome.action.setIcon({ 
-    tabId: tabId,
-    path: iconPath 
-  }).catch(() => {
-    // 아이콘 파일이 없으면 무시
-    console.log("Icon files not available, skipping icon update");
-  });
+  // Badge로 상태 표시 (간단하고 효과적)
+  if (enabled) {
+    // Active: 파란색 배지
+    chrome.action.setBadgeBackgroundColor({ 
+      tabId: tabId,
+      color: '#007bff' 
+    });
+    chrome.action.setBadgeText({ 
+      tabId: tabId,
+      text: '●' 
+    });
+  } else {
+    // Inactive: 배지 제거
+    chrome.action.setBadgeText({ 
+      tabId: tabId,
+      text: '' 
+    });
+  }
 }
 
 btnToggle.addEventListener("click", toggleSplitView);

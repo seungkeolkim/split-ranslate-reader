@@ -201,16 +201,16 @@
       position: "fixed",
       inset: "0",
       zIndex: "2147483647",
-      display: "flex",
-      background: "#fff"
+      display: "flex"
+      // background 제거: 시스템/브라우저 테마 설정 존중
     });
     leftPane = document.createElement("div");
     leftPane.id = "str-left-pane";
     Object.assign(leftPane.style, {
       width: `${Math.round(SPLIT_LEFT_RATIO * 100)}%`,
       height: "100%",
-      borderRight: "1px solid #ddd",
-      background: "#fff"
+      borderRight: "1px solid #ddd"
+      // background 제거: 시스템/브라우저 테마 설정 존중
     });
     leftPane.classList.add("notranslate");
     leftPane.setAttribute("translate", "no");
@@ -220,8 +220,8 @@
       width: "100%",
       height: "100%",
       border: "0",
-      display: "block",
-      background: "#fff"
+      display: "block"
+      // background 제거: 시스템/브라우저 테마 설정 존중
     });
     const headHTML = originalSnapshotHeadHTML ?? `<meta charset="utf-8"><meta name="google" content="notranslate">`;
     const bodyHTML = originalSnapshotBodyHTML ?? "";
@@ -297,8 +297,8 @@ ${bodyHTML}
     Object.assign(rightPane.style, {
       width: `${100 - Math.round(SPLIT_LEFT_RATIO * 100)}%`,
       height: "100%",
-      overflow: "auto",
-      background: "#fff"
+      overflow: "auto"
+      // background 제거: 시스템/브라우저 테마 설정 존중
     });
     const wrapper = document.createElement("div");
     wrapper.id = "str-right-wrapper";

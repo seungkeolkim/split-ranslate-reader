@@ -11,8 +11,51 @@
   var SPLIT_LEFT_RATIO = 0.5;
   var currentURL = location.href;
   var navigationDetector = null;
+  var STORAGE_KEY = "str_enabled_state";
+  var logHistory = [];
   function log(...args) {
+    const timestamp = (/* @__PURE__ */ new Date()).toISOString().split("T")[1].slice(0, -1);
+    const message = `[${timestamp}] [STR-DBG] ${args.map((a) => typeof a === "object" ? JSON.stringify(a) : a).join(" ")}`;
     console.log("[STR-DBG]", ...args);
+    logHistory.push(message);
+    if (logHistory.length > 500) {
+      logHistory.shift();
+    }
+    try {
+      chrome.runtime.sendMessage({
+        type: "LOG",
+        timestamp,
+        data: args
+      }).catch(() => {
+      });
+    } catch (e) {
+    }
+  }
+  window.showSTRLogs = () => {
+    console.log("=== STR Log History ===");
+    logHistory.forEach((log2) => console.log(log2));
+    console.log("======================");
+  };
+  async function saveEnabledState(value) {
+    log("\u{1F4BE} Saving enabled state to storage:", value);
+    try {
+      await chrome.storage.local.set({ [STORAGE_KEY]: value });
+      log("\u2705 State saved successfully");
+    } catch (e) {
+      log("\u274C Failed to save state:", e);
+    }
+  }
+  async function restoreEnabledState() {
+    log("\u{1F4C2} Restoring enabled state from storage...");
+    try {
+      const result = await chrome.storage.local.get(STORAGE_KEY);
+      const savedState = result[STORAGE_KEY] ?? false;
+      log("\u2705 State restored:", savedState);
+      return savedState;
+    } catch (e) {
+      log("\u274C Failed to restore state:", e);
+      return false;
+    }
   }
   var BLOCK_SELECTOR = "p, li, h1, h2, h3, h4, h5, h6";
   function findBlockFromSelection(sel, root) {
@@ -431,6 +474,7 @@ ${bodyHTML}
       }
       log("\u{1F680} START message - enabling split view");
       enabled = true;
+      saveEnabledState(true);
       log("\u{1F4CD} Current URL:", location.href);
       currentURL = location.href;
       log("\u{1F527} Hooking History API...");
@@ -454,6 +498,7 @@ ${bodyHTML}
         return;
       }
       enabled = false;
+      saveEnabledState(false);
       log("\u{1F527} enabled set to false");
       log("\u{1F6D1} Stopping navigation detector...");
       stopNavigationDetector();
@@ -465,5 +510,45 @@ ${bodyHTML}
       });
     }
   });
+  (async function initOnPageLoad() {
+    log("\u{1F30D} Page loaded", {
+      url: location.href,
+      readyState: document.readyState
+    });
+    const wasEnabled = await restoreEnabledState();
+    log("\u{1F50D} Checking previous state", {
+      wasEnabled,
+      currentEnabled: enabled
+    });
+    if (wasEnabled) {
+      log("\u{1F504} Previous session was enabled - auto-restarting split view");
+      enabled = true;
+      currentURL = location.href;
+      if (document.readyState === "loading") {
+        log("\u23F1\uFE0F Document still loading, waiting for DOMContentLoaded...");
+        document.addEventListener("DOMContentLoaded", () => {
+          log("\u2705 DOMContentLoaded fired");
+          restartSplitView();
+        });
+      } else {
+        log("\u2705 Document already loaded");
+        restartSplitView();
+      }
+    } else {
+      log("\u2139\uFE0F Previous session was disabled - waiting for START message");
+    }
+  })();
+  function restartSplitView() {
+    log("\u{1F504} Restarting split view after page load");
+    hookHistoryAPI();
+    startNavigationDetector();
+    setTimeout(() => {
+      log("\u{1F4F8} Capturing snapshot for restarted session");
+      captureSnapshotOnce();
+      log("\u{1F3D7}\uFE0F Creating split UI for restarted session");
+      ensureSplitUI();
+      log("\u2705 Split view restarted successfully");
+    }, 100);
+  }
 })();
 //# sourceMappingURL=content.js.map

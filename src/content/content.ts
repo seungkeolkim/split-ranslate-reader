@@ -22,10 +22,78 @@ let currentURL = location.href;
 let navigationDetector: NodeJS.Timeout | null = null;
 
 // =====================
+// Storage Key
+// =====================
+const STORAGE_KEY = "str_enabled_state";
+
+// =====================
 // LOG (삭제 금지)
 // =====================
+const logHistory: string[] = [];
+
 function log(...args: any[]) {
+  const timestamp = new Date().toISOString().split('T')[1].slice(0, -1);
+  const message = `[${timestamp}] [STR-DBG] ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ')}`;
   console.log("[STR-DBG]", ...args);
+  
+  // 로그 히스토리에 저장 (최대 500개)
+  logHistory.push(message);
+  if (logHistory.length > 500) {
+    logHistory.shift();
+  }
+  
+  // Background에 로그 전송 (영구 보관용)
+  try {
+    chrome.runtime.sendMessage({
+      type: "LOG",
+      timestamp: timestamp,
+      data: args
+    }).catch(() => {
+      // Background가 없으면 무시
+    });
+  } catch (e) {
+    // 무시
+  }
+}
+
+// 로그 히스토리를 콘솔에 출력하는 함수
+(window as any).showSTRLogs = () => {
+  console.log("=== STR Log History ===");
+  logHistory.forEach(log => console.log(log));
+  console.log("======================");
+};
+
+// =====================
+// State Management (페이지 이동 시에도 상태 유지)
+// =====================
+
+/**
+ * 현재 enabled 상태를 storage에 저장
+ */
+async function saveEnabledState(value: boolean) {
+  log("💾 Saving enabled state to storage:", value);
+  try {
+    await chrome.storage.local.set({ [STORAGE_KEY]: value });
+    log("✅ State saved successfully");
+  } catch (e) {
+    log("❌ Failed to save state:", e);
+  }
+}
+
+/**
+ * Storage에서 enabled 상태를 복원
+ */
+async function restoreEnabledState(): Promise<boolean> {
+  log("📂 Restoring enabled state from storage...");
+  try {
+    const result = await chrome.storage.local.get(STORAGE_KEY);
+    const savedState = result[STORAGE_KEY] ?? false;
+    log("✅ State restored:", savedState);
+    return savedState;
+  } catch (e) {
+    log("❌ Failed to restore state:", e);
+    return false;
+  }
 }
 
 // =====================
@@ -668,6 +736,7 @@ chrome.runtime.onMessage.addListener((msg: Msg) => {
 
     log("🚀 START message - enabling split view");
     enabled = true;
+    saveEnabledState(true); // 상태 저장
 
     log("📍 Current URL:", location.href);
     currentURL = location.href;
@@ -701,6 +770,7 @@ chrome.runtime.onMessage.addListener((msg: Msg) => {
     }
 
     enabled = false;
+    saveEnabledState(false); // 상태 저장
     log("🔧 enabled set to false");
     
     // Navigation 감지 중지
@@ -716,3 +786,61 @@ chrome.runtime.onMessage.addListener((msg: Msg) => {
     });
   }
 });
+
+// =====================
+// Page Load: 상태 복원 및 자동 재시작
+// =====================
+(async function initOnPageLoad() {
+  log("🌍 Page loaded", {
+    url: location.href,
+    readyState: document.readyState
+  });
+
+  // Storage에서 이전 상태 복원
+  const wasEnabled = await restoreEnabledState();
+  
+  log("🔍 Checking previous state", {
+    wasEnabled: wasEnabled,
+    currentEnabled: enabled
+  });
+
+  if (wasEnabled) {
+    log("🔄 Previous session was enabled - auto-restarting split view");
+    
+    enabled = true;
+    currentURL = location.href;
+
+    // DOM이 준비될 때까지 대기
+    if (document.readyState === 'loading') {
+      log("⏱️ Document still loading, waiting for DOMContentLoaded...");
+      document.addEventListener('DOMContentLoaded', () => {
+        log("✅ DOMContentLoaded fired");
+        restartSplitView();
+      });
+    } else {
+      log("✅ Document already loaded");
+      restartSplitView();
+    }
+  } else {
+    log("ℹ️ Previous session was disabled - waiting for START message");
+  }
+})();
+
+function restartSplitView() {
+  log("🔄 Restarting split view after page load");
+  
+  // Navigation 감지 시작
+  hookHistoryAPI();
+  startNavigationDetector();
+  
+  // 약간의 지연 후 UI 생성 (번역 적용 전에 캡처하기 위해)
+  setTimeout(() => {
+    log("📸 Capturing snapshot for restarted session");
+    captureSnapshotOnce();
+    
+    log("🏗️ Creating split UI for restarted session");
+    ensureSplitUI();
+    
+    log("✅ Split view restarted successfully");
+  }, 100);
+}

@@ -56,10 +56,15 @@
     updateIcon(currentTabId, newState);
   }
   function updateIcon(tabId, enabled) {
+    console.log(`[POPUP] Requesting icon update for tab ${tabId}: ${enabled ? "GREEN" : "GRAY"}`);
     chrome.runtime.sendMessage({
       type: "UPDATE_ICON",
       tabId,
       enabled
+    }).then(() => {
+      console.log(`[POPUP] Icon update request sent successfully`);
+    }).catch((err) => {
+      console.error(`[POPUP] Failed to send icon update request:`, err);
     });
   }
   btnToggle.addEventListener("click", toggleSplitView);
@@ -70,6 +75,7 @@
       if (changes[key]) {
         currentEnabled = changes[key].newValue ?? false;
         updateUI(currentEnabled);
+        updateIcon(currentTabId, currentEnabled);
       }
     }
   });

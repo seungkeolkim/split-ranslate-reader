@@ -80,11 +80,17 @@ async function toggleSplitView() {
 
 // Icon 상태 업데이트
 function updateIcon(tabId: number, enabled: boolean) {
+  console.log(`[POPUP] Requesting icon update for tab ${tabId}: ${enabled ? 'GREEN' : 'GRAY'}`);
+  
   // Background에 아이콘 업데이트 요청
   chrome.runtime.sendMessage({
     type: "UPDATE_ICON",
     tabId: tabId,
     enabled: enabled
+  }).then(() => {
+    console.log(`[POPUP] Icon update request sent successfully`);
+  }).catch(err => {
+    console.error(`[POPUP] Failed to send icon update request:`, err);
   });
 }
 
@@ -100,6 +106,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
     if (changes[key]) {
       currentEnabled = changes[key].newValue ?? false;
       updateUI(currentEnabled);
+      // 아이콘도 업데이트
+      updateIcon(currentTabId, currentEnabled);
     }
   }
 });

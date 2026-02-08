@@ -9,32 +9,39 @@
     });
   });
   function updateTabIcon(tabId, enabled) {
+    console.log(`[STR-BG] updateTabIcon() called - tabId: ${tabId}, enabled: ${enabled}`);
     if (enabled) {
+      const iconPath = {
+        "16": "icons/icon-active-16.png",
+        "32": "icons/icon-active-32.png",
+        "48": "icons/icon-active-48.png",
+        "128": "icons/icon-active-128.png"
+      };
+      console.log(`[STR-BG] Setting GREEN icon for tab ${tabId}`, iconPath);
       chrome.action.setIcon({
         tabId,
-        path: {
-          "16": "icons/icon-active-16.png",
-          "32": "icons/icon-active-32.png",
-          "48": "icons/icon-active-48.png",
-          "128": "icons/icon-active-128.png"
-        }
+        path: iconPath
+      }).then(() => {
+        console.log(`[STR-BG] \u2705 GREEN icon set successfully for tab ${tabId}`);
       }).catch((err) => {
-        console.error("[STR-BG] Failed to set active icon:", err);
+        console.error(`[STR-BG] \u274C Failed to set active icon for tab ${tabId}:`, err);
       });
-      console.log(`[STR-BG] Icon set to GREEN for tab ${tabId}`);
     } else {
+      const iconPath = {
+        "16": "icons/icon-inactive-16.png",
+        "32": "icons/icon-inactive-32.png",
+        "48": "icons/icon-inactive-48.png",
+        "128": "icons/icon-inactive-128.png"
+      };
+      console.log(`[STR-BG] Setting GRAY icon for tab ${tabId}`, iconPath);
       chrome.action.setIcon({
         tabId,
-        path: {
-          "16": "icons/icon-inactive-16.png",
-          "32": "icons/icon-inactive-32.png",
-          "48": "icons/icon-inactive-48.png",
-          "128": "icons/icon-inactive-128.png"
-        }
+        path: iconPath
+      }).then(() => {
+        console.log(`[STR-BG] \u2705 GRAY icon set successfully for tab ${tabId}`);
       }).catch((err) => {
-        console.error("[STR-BG] Failed to set inactive icon:", err);
+        console.error(`[STR-BG] \u274C Failed to set inactive icon for tab ${tabId}:`, err);
       });
-      console.log(`[STR-BG] Icon set to GRAY for tab ${tabId}`);
     }
   }
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {

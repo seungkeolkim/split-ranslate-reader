@@ -61,6 +61,8 @@ function updateTabIcon(tabId: number, enabled: boolean) {
 // Tab ID 제공 & 아이콘 업데이트
 // =====================
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  console.log(`[STR-BG] Message received:`, msg, `from tab:`, sender.tab?.id);
+  
   // Tab ID 요청 처리
   if (msg.type === "GET_TAB_ID") {
     const tabId = sender.tab?.id ?? null;
@@ -74,10 +76,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     const tabId = msg.tabId ?? sender.tab?.id;
     const enabled = msg.enabled ?? false;
     
+    console.log(`[STR-BG] 📨 UPDATE_ICON received - tabId: ${tabId}, enabled: ${enabled}`);
+    
     if (tabId) {
       updateTabIcon(tabId, enabled);
-      console.log(`[STR-BG] Icon updated for tab ${tabId}: ${enabled ? 'ACTIVE (green)' : 'INACTIVE (gray)'}`);
+      console.log(`[STR-BG] Icon update processed for tab ${tabId}: ${enabled ? 'ACTIVE (green)' : 'INACTIVE (gray)'}`);
+    } else {
+      console.error(`[STR-BG] ❌ Cannot update icon: tabId is null`);
     }
+    
+    return true; // async 응답 가능하도록
   }
   
   // 로그 수집

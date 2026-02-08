@@ -99,18 +99,25 @@ async function saveEnabledState(value: boolean) {
  * 아이콘 상태 업데이트 (background에 요청)
  */
 function updateIconState(enabled: boolean) {
-  if (currentTabId === null) return;
-  
-  try {
-    chrome.runtime.sendMessage({
-      type: "UPDATE_ICON",
-      tabId: currentTabId,
-      enabled: enabled
-    });
-    log("🎨 Icon update requested", { enabled });
-  } catch (e) {
-    log("⚠️ Failed to request icon update:", e);
+  if (currentTabId === null) {
+    log("⚠️ Cannot update icon: tabId is null");
+    return;
   }
+  
+  log("🎨 Sending icon update request to background", { 
+    tabId: currentTabId, 
+    enabled: enabled 
+  });
+  
+  chrome.runtime.sendMessage({
+    type: "UPDATE_ICON",
+    tabId: currentTabId,
+    enabled: enabled
+  }).then(() => {
+    log("✅ Icon update request sent successfully");
+  }).catch((e) => {
+    log("❌ Failed to send icon update request:", e);
+  });
 }
 
 /**

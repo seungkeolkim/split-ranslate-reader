@@ -56,17 +56,23 @@
     }
   }
   function updateIconState(enabled2) {
-    if (currentTabId === null) return;
-    try {
-      chrome.runtime.sendMessage({
-        type: "UPDATE_ICON",
-        tabId: currentTabId,
-        enabled: enabled2
-      });
-      log("\u{1F3A8} Icon update requested", { enabled: enabled2 });
-    } catch (e) {
-      log("\u26A0\uFE0F Failed to request icon update:", e);
+    if (currentTabId === null) {
+      log("\u26A0\uFE0F Cannot update icon: tabId is null");
+      return;
     }
+    log("\u{1F3A8} Sending icon update request to background", {
+      tabId: currentTabId,
+      enabled: enabled2
+    });
+    chrome.runtime.sendMessage({
+      type: "UPDATE_ICON",
+      tabId: currentTabId,
+      enabled: enabled2
+    }).then(() => {
+      log("\u2705 Icon update request sent successfully");
+    }).catch((e) => {
+      log("\u274C Failed to send icon update request:", e);
+    });
   }
   async function restoreEnabledState() {
     if (currentTabId === null) {

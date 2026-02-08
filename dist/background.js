@@ -45,6 +45,7 @@
     }
   }
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    console.log(`[STR-BG] Message received:`, msg, `from tab:`, sender.tab?.id);
     if (msg.type === "GET_TAB_ID") {
       const tabId = sender.tab?.id ?? null;
       console.log(`[STR-BG] GET_TAB_ID request from tab ${tabId}`);
@@ -54,10 +55,14 @@
     if (msg.type === "UPDATE_ICON") {
       const tabId = msg.tabId ?? sender.tab?.id;
       const enabled = msg.enabled ?? false;
+      console.log(`[STR-BG] \u{1F4E8} UPDATE_ICON received - tabId: ${tabId}, enabled: ${enabled}`);
       if (tabId) {
         updateTabIcon(tabId, enabled);
-        console.log(`[STR-BG] Icon updated for tab ${tabId}: ${enabled ? "ACTIVE (green)" : "INACTIVE (gray)"}`);
+        console.log(`[STR-BG] Icon update processed for tab ${tabId}: ${enabled ? "ACTIVE (green)" : "INACTIVE (gray)"}`);
+      } else {
+        console.error(`[STR-BG] \u274C Cannot update icon: tabId is null`);
       }
+      return true;
     }
     if (msg.type === "LOG") {
       const logEntry = {

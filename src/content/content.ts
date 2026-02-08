@@ -183,9 +183,16 @@ function findBlockIndexFromSelection(
 // Split UI
 // =====================
 function ensureSplitUI() {
-  if (splitRoot) return;
+  if (splitRoot) {
+    log("⚠️ ensureSplitUI() - splitRoot already exists");
+    return;
+  }
 
-  log("ensureSplitUI() create");
+  log("🏗️ ensureSplitUI() CREATE START");
+  log("📊 Snapshot status:", {
+    bodyHTML: originalSnapshotBodyHTML ? `${originalSnapshotBodyHTML.length} chars` : "null",
+    headHTML: originalSnapshotHeadHTML ? `${originalSnapshotHeadHTML.length} chars` : "null"
+  });
 
   splitRoot = document.createElement("div");
   splitRoot.id = "str-split-root";
@@ -345,10 +352,11 @@ ${bodyHTML}
 
   document.body.appendChild(splitRoot);
 
-  log("ensureSplitUI() done", {
+  log("✅ ensureSplitUI() DONE", {
     leftPane: !!leftPane,
     rightPane: !!rightPane,
     leftIframe: !!leftIframe,
+    splitRootInDOM: document.body.contains(splitRoot)
   });
 
   setupScrollSync();
@@ -394,19 +402,33 @@ ${bodyHTML}
 }
 
 function teardownSplitUI() {
-  log("teardownSplitUI() start");
+  log("🧹 teardownSplitUI() START", {
+    splitRoot: !!splitRoot,
+    leftPane: !!leftPane,
+    rightPane: !!rightPane
+  });
 
-  if (!splitRoot) return;
+  if (!splitRoot) {
+    log("⚠️ teardownSplitUI() - splitRoot not found, nothing to teardown");
+    return;
+  }
 
   // rightPane 안의 wrapper를 다시 body로 복원
   const wrapper = rightPane?.querySelector("#str-right-wrapper");
   if (wrapper) {
+    log("📦 Restoring wrapper children to body", {
+      childCount: wrapper.children.length
+    });
     while (wrapper.firstChild) {
       document.body.appendChild(wrapper.firstChild);
     }
+    log("✅ Wrapper children restored");
+  } else {
+    log("⚠️ Wrapper not found in rightPane");
   }
 
   splitRoot.remove();
+  log("🗑️ splitRoot removed from DOM");
 
   splitRoot = null;
   leftPane = null;
@@ -417,7 +439,11 @@ function teardownSplitUI() {
   // originalSnapshotBodyHTML = null;
   // originalSnapshotHeadHTML = null;
 
-  log("teardownSplitUI() done");
+  log("✅ teardownSplitUI() DONE", {
+    splitRoot: !!splitRoot,
+    leftPane: !!leftPane,
+    rightPane: !!rightPane
+  });
 }
 
 // =====================
@@ -498,52 +524,81 @@ function clearHighlights() {
  * History API 후킹: SPA 라우팅 감지
  */
 function hookHistoryAPI() {
+  log("🔧 hookHistoryAPI() called");
+  
   const originalPushState = history.pushState;
   const originalReplaceState = history.replaceState;
 
   history.pushState = function(...args) {
+    log("🔀 history.pushState INTERCEPTED", {
+      url: location.href,
+      args: args,
+      enabled: enabled
+    });
     originalPushState.apply(this, args);
-    log("history.pushState detected", location.href);
+    log("🔀 history.pushState AFTER apply", location.href);
     onNavigationDetected();
   };
 
   history.replaceState = function(...args) {
+    log("🔀 history.replaceState INTERCEPTED", {
+      url: location.href,
+      args: args,
+      enabled: enabled
+    });
     originalReplaceState.apply(this, args);
-    log("history.replaceState detected", location.href);
+    log("🔀 history.replaceState AFTER apply", location.href);
     onNavigationDetected();
   };
 
   // popstate: 브라우저 뒤로/앞으로
-  window.addEventListener("popstate", () => {
-    log("popstate detected", location.href);
+  window.addEventListener("popstate", (e) => {
+    log("⬅️ popstate EVENT", {
+      url: location.href,
+      state: e.state,
+      enabled: enabled
+    });
     onNavigationDetected();
   });
 
-  log("History API hooked");
+  log("✅ History API hooked successfully");
 }
 
 /**
  * URL 변경 폴링 (SPA fallback)
  */
 function startNavigationDetector() {
-  if (navigationDetector) return;
+  if (navigationDetector) {
+    log("⚠️ startNavigationDetector() already running");
+    return;
+  }
+
+  log("🚀 startNavigationDetector() starting...");
+  log("📍 Initial URL:", currentURL);
 
   navigationDetector = setInterval(() => {
     if (location.href !== currentURL) {
-      log("URL change detected (polling)", { from: currentURL, to: location.href });
+      log("🔄 URL CHANGE detected (polling)", {
+        from: currentURL,
+        to: location.href,
+        enabled: enabled,
+        splitRoot: !!splitRoot
+      });
       currentURL = location.href;
       onNavigationDetected();
     }
   }, 500);
 
-  log("Navigation detector started");
+  log("✅ Navigation detector started (polling every 500ms)");
 }
 
 function stopNavigationDetector() {
   if (navigationDetector) {
     clearInterval(navigationDetector);
     navigationDetector = null;
-    log("Navigation detector stopped");
+    log("🛑 Navigation detector stopped");
+  } else {
+    log("⚠️ stopNavigationDetector() but detector was not running");
   }
 }
 
@@ -551,25 +606,51 @@ function stopNavigationDetector() {
  * Navigation 감지 시 호출
  */
 function onNavigationDetected() {
-  if (!enabled) return;
+  log("🎯 onNavigationDetected() CALLED", {
+    url: location.href,
+    enabled: enabled,
+    splitRoot: !!splitRoot,
+    leftPane: !!leftPane,
+    rightPane: !!rightPane
+  });
 
-  log("onNavigationDetected() - page changed", location.href);
+  if (!enabled) {
+    log("❌ onNavigationDetected() - ABORTED: enabled=false");
+    return;
+  }
+
+  log("✅ onNavigationDetected() - proceeding (enabled=true)");
+  log("🧹 Starting teardown...");
 
   // 기존 split 정리
   teardownSplitUI();
 
+  log("⏱️ Waiting 300ms for DOM stabilization...");
+
   // 새 페이지 스냅샷 캡처 대기 (DOM이 안정화될 때까지)
   setTimeout(() => {
-    log("Re-capturing snapshot for new page");
+    log("🔄 Re-capturing snapshot for new page", {
+      url: location.href,
+      enabled: enabled,
+      bodyChildren: document.body.children.length
+    });
     
     // 스냅샷 초기화 후 재캡처
     originalSnapshotBodyHTML = null;
     originalSnapshotHeadHTML = null;
     
+    log("📸 Calling captureSnapshotOnce()...");
     captureSnapshotOnce();
+    
+    log("🏗️ Calling ensureSplitUI()...");
     ensureSplitUI();
 
-    log("Split view reconstructed for new page");
+    log("✅ Split view reconstruction complete", {
+      splitRoot: !!splitRoot,
+      leftPane: !!leftPane,
+      rightPane: !!rightPane,
+      leftIframe: !!leftIframe
+    });
   }, 300); // DOM 안정화 대기
 }
 
@@ -577,30 +658,61 @@ function onNavigationDetected() {
 // Chrome 메시지
 // =====================
 chrome.runtime.onMessage.addListener((msg: Msg) => {
-  log("onMessage", msg);
+  log("📨 onMessage received", msg);
 
   if (msg.type === "START") {
-    if (enabled) return;
+    if (enabled) {
+      log("⚠️ START message but already enabled");
+      return;
+    }
 
+    log("🚀 START message - enabling split view");
     enabled = true;
 
+    log("📍 Current URL:", location.href);
+    currentURL = location.href;
+
     // Navigation 감지 시작
+    log("🔧 Hooking History API...");
     hookHistoryAPI();
+    
+    log("🔧 Starting Navigation Detector...");
     startNavigationDetector();
 
+    log("📸 Capturing initial snapshot...");
     captureSnapshotOnce();
+    
+    log("🏗️ Creating split UI...");
     ensureSplitUI();
 
-    log("START done");
+    log("✅ START complete", {
+      enabled: enabled,
+      splitRoot: !!splitRoot,
+      currentURL: currentURL
+    });
   }
 
   if (msg.type === "STOP") {
+    log("🛑 STOP message received");
+    
+    if (!enabled) {
+      log("⚠️ STOP message but already disabled");
+      return;
+    }
+
     enabled = false;
+    log("🔧 enabled set to false");
     
     // Navigation 감지 중지
+    log("🛑 Stopping navigation detector...");
     stopNavigationDetector();
     
+    log("🧹 Tearing down split UI...");
     teardownSplitUI();
-    log("STOP done");
+    
+    log("✅ STOP complete", {
+      enabled: enabled,
+      splitRoot: !!splitRoot
+    });
   }
 });

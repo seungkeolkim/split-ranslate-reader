@@ -100,8 +100,15 @@
     return null;
   }
   function ensureSplitUI() {
-    if (splitRoot) return;
-    log("ensureSplitUI() create");
+    if (splitRoot) {
+      log("\u26A0\uFE0F ensureSplitUI() - splitRoot already exists");
+      return;
+    }
+    log("\u{1F3D7}\uFE0F ensureSplitUI() CREATE START");
+    log("\u{1F4CA} Snapshot status:", {
+      bodyHTML: originalSnapshotBodyHTML ? `${originalSnapshotBodyHTML.length} chars` : "null",
+      headHTML: originalSnapshotHeadHTML ? `${originalSnapshotHeadHTML.length} chars` : "null"
+    });
     splitRoot = document.createElement("div");
     splitRoot.id = "str-split-root";
     Object.assign(splitRoot.style, {
@@ -216,10 +223,11 @@ ${bodyHTML}
     splitRoot.appendChild(leftPane);
     splitRoot.appendChild(rightPane);
     document.body.appendChild(splitRoot);
-    log("ensureSplitUI() done", {
+    log("\u2705 ensureSplitUI() DONE", {
       leftPane: !!leftPane,
       rightPane: !!rightPane,
-      leftIframe: !!leftIframe
+      leftIframe: !!leftIframe,
+      splitRootInDOM: document.body.contains(splitRoot)
     });
     setupScrollSync();
     rightPane.addEventListener("mouseup", () => {
@@ -250,20 +258,38 @@ ${bodyHTML}
     });
   }
   function teardownSplitUI() {
-    log("teardownSplitUI() start");
-    if (!splitRoot) return;
+    log("\u{1F9F9} teardownSplitUI() START", {
+      splitRoot: !!splitRoot,
+      leftPane: !!leftPane,
+      rightPane: !!rightPane
+    });
+    if (!splitRoot) {
+      log("\u26A0\uFE0F teardownSplitUI() - splitRoot not found, nothing to teardown");
+      return;
+    }
     const wrapper = rightPane?.querySelector("#str-right-wrapper");
     if (wrapper) {
+      log("\u{1F4E6} Restoring wrapper children to body", {
+        childCount: wrapper.children.length
+      });
       while (wrapper.firstChild) {
         document.body.appendChild(wrapper.firstChild);
       }
+      log("\u2705 Wrapper children restored");
+    } else {
+      log("\u26A0\uFE0F Wrapper not found in rightPane");
     }
     splitRoot.remove();
+    log("\u{1F5D1}\uFE0F splitRoot removed from DOM");
     splitRoot = null;
     leftPane = null;
     rightPane = null;
     leftIframe = null;
-    log("teardownSplitUI() done");
+    log("\u2705 teardownSplitUI() DONE", {
+      splitRoot: !!splitRoot,
+      leftPane: !!leftPane,
+      rightPane: !!rightPane
+    });
   }
   function setupScrollSync() {
     if (!rightPane || !leftIframe) {
@@ -297,71 +323,146 @@ ${bodyHTML}
     activeHighlights = [];
   }
   function hookHistoryAPI() {
+    log("\u{1F527} hookHistoryAPI() called");
     const originalPushState = history.pushState;
     const originalReplaceState = history.replaceState;
     history.pushState = function(...args) {
+      log("\u{1F500} history.pushState INTERCEPTED", {
+        url: location.href,
+        args,
+        enabled
+      });
       originalPushState.apply(this, args);
-      log("history.pushState detected", location.href);
+      log("\u{1F500} history.pushState AFTER apply", location.href);
       onNavigationDetected();
     };
     history.replaceState = function(...args) {
+      log("\u{1F500} history.replaceState INTERCEPTED", {
+        url: location.href,
+        args,
+        enabled
+      });
       originalReplaceState.apply(this, args);
-      log("history.replaceState detected", location.href);
+      log("\u{1F500} history.replaceState AFTER apply", location.href);
       onNavigationDetected();
     };
-    window.addEventListener("popstate", () => {
-      log("popstate detected", location.href);
+    window.addEventListener("popstate", (e) => {
+      log("\u2B05\uFE0F popstate EVENT", {
+        url: location.href,
+        state: e.state,
+        enabled
+      });
       onNavigationDetected();
     });
-    log("History API hooked");
+    log("\u2705 History API hooked successfully");
   }
   function startNavigationDetector() {
-    if (navigationDetector) return;
+    if (navigationDetector) {
+      log("\u26A0\uFE0F startNavigationDetector() already running");
+      return;
+    }
+    log("\u{1F680} startNavigationDetector() starting...");
+    log("\u{1F4CD} Initial URL:", currentURL);
     navigationDetector = setInterval(() => {
       if (location.href !== currentURL) {
-        log("URL change detected (polling)", { from: currentURL, to: location.href });
+        log("\u{1F504} URL CHANGE detected (polling)", {
+          from: currentURL,
+          to: location.href,
+          enabled,
+          splitRoot: !!splitRoot
+        });
         currentURL = location.href;
         onNavigationDetected();
       }
     }, 500);
-    log("Navigation detector started");
+    log("\u2705 Navigation detector started (polling every 500ms)");
   }
   function stopNavigationDetector() {
     if (navigationDetector) {
       clearInterval(navigationDetector);
       navigationDetector = null;
-      log("Navigation detector stopped");
+      log("\u{1F6D1} Navigation detector stopped");
+    } else {
+      log("\u26A0\uFE0F stopNavigationDetector() but detector was not running");
     }
   }
   function onNavigationDetected() {
-    if (!enabled) return;
-    log("onNavigationDetected() - page changed", location.href);
+    log("\u{1F3AF} onNavigationDetected() CALLED", {
+      url: location.href,
+      enabled,
+      splitRoot: !!splitRoot,
+      leftPane: !!leftPane,
+      rightPane: !!rightPane
+    });
+    if (!enabled) {
+      log("\u274C onNavigationDetected() - ABORTED: enabled=false");
+      return;
+    }
+    log("\u2705 onNavigationDetected() - proceeding (enabled=true)");
+    log("\u{1F9F9} Starting teardown...");
     teardownSplitUI();
+    log("\u23F1\uFE0F Waiting 300ms for DOM stabilization...");
     setTimeout(() => {
-      log("Re-capturing snapshot for new page");
+      log("\u{1F504} Re-capturing snapshot for new page", {
+        url: location.href,
+        enabled,
+        bodyChildren: document.body.children.length
+      });
       originalSnapshotBodyHTML = null;
       originalSnapshotHeadHTML = null;
+      log("\u{1F4F8} Calling captureSnapshotOnce()...");
       captureSnapshotOnce();
+      log("\u{1F3D7}\uFE0F Calling ensureSplitUI()...");
       ensureSplitUI();
-      log("Split view reconstructed for new page");
+      log("\u2705 Split view reconstruction complete", {
+        splitRoot: !!splitRoot,
+        leftPane: !!leftPane,
+        rightPane: !!rightPane,
+        leftIframe: !!leftIframe
+      });
     }, 300);
   }
   chrome.runtime.onMessage.addListener((msg) => {
-    log("onMessage", msg);
+    log("\u{1F4E8} onMessage received", msg);
     if (msg.type === "START") {
-      if (enabled) return;
+      if (enabled) {
+        log("\u26A0\uFE0F START message but already enabled");
+        return;
+      }
+      log("\u{1F680} START message - enabling split view");
       enabled = true;
+      log("\u{1F4CD} Current URL:", location.href);
+      currentURL = location.href;
+      log("\u{1F527} Hooking History API...");
       hookHistoryAPI();
+      log("\u{1F527} Starting Navigation Detector...");
       startNavigationDetector();
+      log("\u{1F4F8} Capturing initial snapshot...");
       captureSnapshotOnce();
+      log("\u{1F3D7}\uFE0F Creating split UI...");
       ensureSplitUI();
-      log("START done");
+      log("\u2705 START complete", {
+        enabled,
+        splitRoot: !!splitRoot,
+        currentURL
+      });
     }
     if (msg.type === "STOP") {
+      log("\u{1F6D1} STOP message received");
+      if (!enabled) {
+        log("\u26A0\uFE0F STOP message but already disabled");
+        return;
+      }
       enabled = false;
+      log("\u{1F527} enabled set to false");
+      log("\u{1F6D1} Stopping navigation detector...");
       stopNavigationDetector();
+      log("\u{1F9F9} Tearing down split UI...");
       teardownSplitUI();
-      log("STOP done");
+      log("\u2705 STOP complete", {
+        enabled,
+        splitRoot: !!splitRoot
+      });
     }
   });
 })();

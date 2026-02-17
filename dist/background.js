@@ -1,13 +1,6 @@
 "use strict";
 (() => {
   // src/background/background.ts
-  chrome.runtime.onInstalled.addListener(() => {
-    chrome.storage.sync.get(["targetLang"], (res) => {
-      if (!res.targetLang) {
-        chrome.storage.sync.set({ targetLang: "auto" });
-      }
-    });
-  });
   function updateTabIcon(tabId, enabled) {
     console.log(`[STR-BG] updateTabIcon() called - tabId: ${tabId}, enabled: ${enabled}`);
     if (enabled) {

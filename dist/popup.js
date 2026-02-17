@@ -1,17 +1,10 @@
 "use strict";
 (() => {
   // src/popup/popup.ts
-  var select = document.getElementById("targetLang");
   var btnToggle = document.getElementById("btnToggle");
   var statusText = document.getElementById("statusText");
   var currentEnabled = false;
   var currentTabId = null;
-  chrome.storage.sync.get(["targetLang"], (res) => {
-    select.value = res.targetLang ?? "auto";
-  });
-  select.addEventListener("change", () => {
-    chrome.storage.sync.set({ targetLang: select.value });
-  });
   async function checkCurrentTabState() {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab?.id) {

@@ -1,11 +1,3 @@
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.storage.sync.get(["targetLang"], (res) => {
-    if (!res.targetLang) {
-      chrome.storage.sync.set({ targetLang: "auto" });
-    }
-  });
-});
-
 // =====================
 // Icon Management (정적 이미지 사용)
 // =====================

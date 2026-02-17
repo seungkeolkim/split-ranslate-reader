@@ -1,21 +1,9 @@
-import { TargetLang } from "../shared/types";
-
-const select = document.getElementById("targetLang") as HTMLSelectElement;
 const btnToggle = document.getElementById("btnToggle") as HTMLButtonElement;
 const statusText = document.getElementById("statusText") as HTMLSpanElement;
 
 // 현재 탭의 상태 저장
 let currentEnabled = false;
 let currentTabId: number | null = null;
-
-// Load stored target language
-chrome.storage.sync.get(["targetLang"], (res) => {
-  select.value = (res.targetLang ?? "auto") as TargetLang;
-});
-
-select.addEventListener("change", () => {
-  chrome.storage.sync.set({ targetLang: select.value });
-});
 
 // 현재 탭의 활성화 상태 확인
 async function checkCurrentTabState() {
